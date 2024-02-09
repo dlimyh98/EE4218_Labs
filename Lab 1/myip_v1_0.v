@@ -17,13 +17,13 @@
 -------------------------------------------------------------------------------
 --
 -- Definition of Ports
--- ACLK              : Synchronous clock
--- ARESETN           : System reset, active low
+-- ACLK           : Synchronous clock
+-- ARESETN        : System reset, active low
 -- S_AXIS_TREADY  : Ready to accept data in
--- S_AXIS_TDATA   :  Data in 
+-- S_AXIS_TDATA   : Data in 
 -- S_AXIS_TLAST   : Optional data in qualifier
 -- S_AXIS_TVALID  : Data in is valid
--- M_AXIS_TVALID  :  Data out is valid
+-- M_AXIS_TVALID  : Data out is valid
 -- M_AXIS_TDATA   : Data Out
 -- M_AXIS_TLAST   : Optional data out qualifier
 -- M_AXIS_TREADY  : Connected slave device is ready to accept data out
@@ -63,37 +63,33 @@ module myip_v1_0
 //----------------------------------------
 // Implementation Section
 //----------------------------------------
-// In this section, we povide an example implementation of MODULE myip_v1_0
-// that does the following:
-//
-// 1. Read all inputs
-// 2. Add each input to the contents of register 'sum' which acts as an accumulator
-// 3. After all the inputs have been read, write out the content of 'sum', 'sum+1', 'sum+2', 'sum+3'
-//
-// You will need to modify this example for
-// MODULE myip_v1_0 to implement your coprocessor
-
 
 // RAM parameters for assignment 1
 	localparam A_depth_bits = 3;  	// 8 elements (A is a 2x4 matrix)
 	localparam B_depth_bits = 2; 	// 4 elements (B is a 4x1 matrix)
 	localparam RES_depth_bits = 1;	// 2 elements (RES is a 2x1 matrix)
 	localparam width = 8;			// all 8-bit data
+	localparam NUMBER_OF_A_WORDS = 2**A_depth_bits;
+	localparam NUMBER_OF_B_WORDS = 2**B_depth_bits;
+	localparam NUMBER_OF_INPUT_WORDS  = NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS;	// Total number of input data.
+	localparam NUMBER_OF_OUTPUT_WORDS = 2**RES_depth_bits;	                    // Total number of output data
 	
 // wires (or regs) to connect to RAMs and matrix_multiply_0 for assignment 1
 // those which are assigned in an always block of myip_v1_0 shoud be changes to reg.
-	wire	A_write_en;								// myip_v1_0 -> A_RAM. To be assigned within myip_v1_0. Possibly reg.
-	wire	[A_depth_bits-1:0] A_write_address;		// myip_v1_0 -> A_RAM. To be assigned within myip_v1_0. Possibly reg. 
-	wire	[width-1:0] A_write_data_in;			// myip_v1_0 -> A_RAM. To be assigned within myip_v1_0. Possibly reg.
+	reg  	A_write_en;								// myip_v1_0 -> A_RAM. To be assigned within myip_v1_0. Possibly reg.
+	reg	[A_depth_bits-1:0] A_write_address;		    // myip_v1_0 -> A_RAM. To be assigned within myip_v1_0. Possibly reg. 
+	reg	[width-1:0] A_write_data_in;			    // myip_v1_0 -> A_RAM. To be assigned within myip_v1_0. Possibly reg.
 	wire	A_read_en;								// matrix_multiply_0 -> A_RAM.
 	wire	[A_depth_bits-1:0] A_read_address;		// matrix_multiply_0 -> A_RAM.
 	wire	[width-1:0] A_read_data_out;			// A_RAM -> matrix_multiply_0.
-	wire	B_write_en;								// myip_v1_0 -> B_RAM. To be assigned within myip_v1_0. Possibly reg.
-	wire	[B_depth_bits-1:0] B_write_address;		// myip_v1_0 -> B_RAM. To be assigned within myip_v1_0. Possibly reg.
-	wire	[width-1:0] B_write_data_in;			// myip_v1_0 -> B_RAM. To be assigned within myip_v1_0. Possibly reg.
+
+	reg	B_write_en;								    // myip_v1_0 -> B_RAM. To be assigned within myip_v1_0. Possibly reg.
+	reg	[B_depth_bits-1:0] B_write_address;		    // myip_v1_0 -> B_RAM. To be assigned within myip_v1_0. Possibly reg.
+	reg	[width-1:0] B_write_data_in;			    // myip_v1_0 -> B_RAM. To be assigned within myip_v1_0. Possibly reg.
 	wire	B_read_en;								// matrix_multiply_0 -> B_RAM.
 	wire	[B_depth_bits-1:0] B_read_address;		// matrix_multiply_0 -> B_RAM.
 	wire	[width-1:0] B_read_data_out;			// B_RAM -> matrix_multiply_0.
+
 	wire	RES_write_en;							// matrix_multiply_0 -> RES_RAM.
 	wire	[RES_depth_bits-1:0] RES_write_address;	// matrix_multiply_0 -> RES_RAM.
 	wire	[width-1:0] RES_write_data_in;			// matrix_multiply_0 -> RES_RAM.
@@ -102,23 +98,15 @@ module myip_v1_0
 	wire	[width-1:0] RES_read_data_out;			// RES_RAM -> myip_v1_0
 	
 	// wires (or regs) to connect to matrix_multiply for assignment 1
-	wire	Start; 								// myip_v1_0 -> matrix_multiply_0. To be assigned within myip_v1_0. Possibly reg.
-	wire	Done;								// matrix_multiply_0 -> myip_v1_0. 
+	wire	Matrix_Start; 								// myip_v1_0 -> matrix_multiply_0. To be assigned within myip_v1_0. Possibly reg.
+	wire	Matrix_Done;								// matrix_multiply_0 -> myip_v1_0. 
 			
-				
-	// Total number of input data.
-	localparam NUMBER_OF_INPUT_WORDS  = 4; // 2**A_depth_bits + 2**B_depth_bits = 12 for assignment 1
-
-	// Total number of output data
-	localparam NUMBER_OF_OUTPUT_WORDS = 4; // 2**RES_depth_bits = 2 for assignment 1
-
 	// Define the states of state machine (one hot encoding)
+	reg [3:0] state;
 	localparam Idle  = 4'b1000;
 	localparam Read_Inputs = 4'b0100;
 	localparam Compute = 4'b0010;
 	localparam Write_Outputs  = 4'b0001;
-
-	reg [3:0] state;
 
 	// Accumulator to hold sum of inputs read at any point in time
 	reg [31:0] sum;
@@ -133,11 +121,12 @@ module myip_v1_0
    // The sequence in which data are read in and written out should be
    // consistent with the sequence they are written and read in the driver's hw_acc.c file
 
+// STATE MACHINE implemented as a single-always Moore machine
+// a Mealy machine that asserts S_AXIS_TREADY and captures S_AXIS_TDATA etc can save a clock cycle
+	assign Matrix_Start = (state == Compute);
+
 	always @(posedge ACLK) 
 	begin
-	// implemented as a single-always Moore machine
-	// a Mealy machine that asserts S_AXIS_TREADY and captures S_AXIS_TDATA etc can save a clock cycle
-
 		/****** Synchronous reset (active low) ******/
 		if (!ARESETN)
 		begin
@@ -156,40 +145,66 @@ module myip_v1_0
 					S_AXIS_TREADY 	<= 0;
 					M_AXIS_TVALID 	<= 0;
 					M_AXIS_TLAST  	<= 0;
-					if (S_AXIS_TVALID == 1)
+
+					if (S_AXIS_TVALID == 1)    // MASTER->SLAVE: Data placed by MASTER on TDATA is valid
 					begin
+						// SLAVE: Only ready to accept data when signalled by MASTER
+						// Note : This is not really how AXIS works (SLAVE can be ready without indication from MASTER)
 						state       	<= Read_Inputs;
-						S_AXIS_TREADY 	<= 1; 
-						// start receiving data once you go into Read_Inputs
+						S_AXIS_TREADY 	<= 1;    // SLAVE->MASTER: Indication from SLAVE to MASTER that SLAVE is accepting data
 					end
 				end
 
 				Read_Inputs:
 				begin
 					S_AXIS_TREADY 	<= 1;
-					if (S_AXIS_TVALID == 1) 
+
+					// NOTE: read_counter is effectively 1-indexed
+					// First element of S_AXIS_TDATA comes in just before read_counter == 1. (i.e read_counter == 0 is unused)
+					if (S_AXIS_TVALID == 1)    // Transaction only occurs if TREADY & TVALID are asserted simultaneously
 					begin
-						// Coprocessor function (adding the numbers together) happens here (partly)
-						sum  	<=	sum + S_AXIS_TDATA;
-						// If we are expecting a variable number of words, we should make use of S_AXIS_TLAST.
-						// Since the number of words we are expecting is fixed, we simply count and receive 
-						// the expected number (NUMBER_OF_INPUT_WORDS) instead.
-						if (read_counter == NUMBER_OF_INPUT_WORDS-1)
-						begin
-							state      		<= Compute;
-							S_AXIS_TREADY 	<= 0;
+						// Read and store values into RAM (RAM_A & RAM_B) first
+						if (read_counter < NUMBER_OF_A_WORDS) begin
+							// Incoming data belongs to 'A' matrix
+							A_write_en <= 1;
+							A_write_address <= read_counter;
+							A_write_data_in <= S_AXIS_TDATA[width-1:0];
+						end 
+						else begin
+							// Incoming data belongs to 'B' matrix
+							B_write_en <= 1; A_write_en <= 0;
+							B_write_address <= read_counter - NUMBER_OF_A_WORDS;
+							B_write_data_in <= S_AXIS_TDATA[width-1:0];
 						end
-						else
-						begin
-							read_counter 	<= read_counter + 1;
-						end
+					end
+
+					/*
+					Potential problem : S_AXIS_TVALID is deasserted while we still need to write to RAM
+					i.e We have captured the value of S_AXIS_TDATA already, but we still need an additional 1 clock cycle to write to RAM
+					    Hence, B_write_en <= 0 and State <= Compute must be OUTSIDE of the check for S_AXIS_TVALID
+					*/
+
+					// If we are expecting a variable number of words, we should make use of S_AXIS_TLAST.
+					if (read_counter == NUMBER_OF_INPUT_WORDS)
+					begin
+						// RAM_A & RAM_B filled, can begin Matrix Multiplication
+						B_write_en <= 0;
+						state      		<= Compute;
+						S_AXIS_TREADY 	<= 0;	// SLAVE->MASTER: Indication from SLAVE to MASTER that SLAVE not accepting data
+					end
+					else begin
+						// Still continue filling RAM_A/RAM_B
+						read_counter 	<= read_counter + 1;
 					end
 				end
             
 				Compute:
 				begin
-					// Coprocessor function to be implemented (matrix multiply) should be here. Right now, nothing happens here.
-					state		<= Write_Outputs;
+					if (Matrix_Done) begin
+						// Finished computing when Matrix Multiply signals DONE
+						state <= Write_Outputs;
+					end
+
 					// Possible to save a cycle by asserting M_AXIS_TVALID and presenting M_AXIS_TDATA just before going into 
 					// Write_Outputs state. However, need to adjust write_counter limits accordingly
 					// Alternatively, M_AXIS_TVALID and M_AXIS_TDATA can be asserted combinationally to save a cycle.
@@ -276,8 +291,8 @@ module myip_v1_0
 	) matrix_multiply_0
 	(									
 		.clk(ACLK),
-		.Start(Start),
-		.Done(Done),
+		.Start(Matrix_Start),
+		.Done(Matrix_Done),
 		
 		.A_read_en(A_read_en),
 		.A_read_address(A_read_address),

@@ -45,15 +45,21 @@ module tb_myip_v1_0(
                 .M_AXIS_TLAST(M_AXIS_TLAST),
                 .M_AXIS_TREADY(M_AXIS_TREADY)
 	);
-	
-	localparam NUMBER_OF_INPUT_WORDS  = 4;  // length of an input vector
-	localparam NUMBER_OF_OUTPUT_WORDS  = 4;  // length of an input vector
-	localparam NUMBER_OF_TEST_VECTORS  = 2;  // number of such test vectors (cases)
-	localparam width  = 8;  // width of an input vector
+
+	localparam A_depth_bits = 3;  	// 8 elements (A is a 2x4 matrix)
+	localparam B_depth_bits = 2; 	// 4 elements (B is a 4x1 matrix)
+	localparam RES_depth_bits = 1;	// 2 elements (RES is a 2x1 matrix)
+	localparam width = 8;			// all 8-bit data
+	localparam NUMBER_OF_A_WORDS = 2**A_depth_bits;
+	localparam NUMBER_OF_B_WORDS = 2**B_depth_bits;
+	localparam NUMBER_OF_INPUT_WORDS  = NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS;	// Total number of input data.
+	localparam NUMBER_OF_OUTPUT_WORDS = 2**RES_depth_bits;	                    // Total number of output data
+
+	localparam NUMBER_OF_TEST_VECTORS  = 1;  // number of such test vectors (cases)
            
-	reg [width-1:0] test_input_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_INPUT_WORDS-1]; // 4 inputs * 2
-	reg [width-1:0] test_result_expected_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS-1]; // 4 outputs *2
-	reg [width-1:0] result_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS-1]; // same size as test_result_expected_memory
+	reg [width-1:0] test_input_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_INPUT_WORDS-1];
+	reg [width-1:0] test_result_expected_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS-1];
+	reg [width-1:0] result_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS-1];    // same size as test_result_expected_memory
 	
 	integer word_cnt, test_case_cnt;
 	reg success = 1'b1;
@@ -100,6 +106,8 @@ module tb_myip_v1_0(
 						#100;			// wait for one clock cycle before for co-processor to capture data (if S_AXIS_TREADY was set) 
 											          // or before checking S_AXIS_TREADY again (if S_AXIS_TREADY was not set)
 					end
+
+					// Slave has captured all data, but it doesn't mean that it has written it to RAM yet
 					S_AXIS_TVALID = 1'b0;	// we no longer give any data to the co-processor
 					S_AXIS_TLAST = 1'b0;
 					

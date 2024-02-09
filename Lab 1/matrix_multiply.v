@@ -25,27 +25,118 @@ module matrix_multiply
 	) 
 	(
 		input clk,										
-		input Start,									// myip_v1_0 -> matrix_multiply_0.
-		output Done,									// matrix_multiply_0 -> myip_v1_0. Possibly reg.
+		input Start,									    // myip_v1_0 -> matrix_multiply_0.
+		output reg Done,									// matrix_multiply_0 -> myip_v1_0. Possibly reg.
 		
-		output A_read_en,  								// matrix_multiply_0 -> A_RAM. Possibly reg.
-		output [A_depth_bits-1:0] A_read_address, 		// matrix_multiply_0 -> A_RAM. Possibly reg.
-		input [width-1:0] A_read_data_out,				// A_RAM -> matrix_multiply_0.
+		output reg A_read_en,  								// matrix_multiply_0 -> A_RAM. Possibly reg.
+		output reg [A_depth_bits-1:0] A_read_address, 		// matrix_multiply_0 -> A_RAM. Possibly reg.
+		input [width-1:0] A_read_data_out,				    // A_RAM -> matrix_multiply_0.
 		
-		output B_read_en, 								// matrix_multiply_0 -> B_RAM. Possibly reg.
-		output [B_depth_bits-1:0] B_read_address, 		// matrix_multiply_0 -> B_RAM. Possibly reg.
-		input [width-1:0] B_read_data_out,				// B_RAM -> matrix_multiply_0.
+		output reg B_read_en, 								// matrix_multiply_0 -> B_RAM. Possibly reg.
+		output reg [B_depth_bits-1:0] B_read_address, 		// matrix_multiply_0 -> B_RAM. Possibly reg.
+		input [width-1:0] B_read_data_out,				    // B_RAM -> matrix_multiply_0.
 		
-		output RES_write_en, 							// matrix_multiply_0 -> RES_RAM. Possibly reg.
-		output [RES_depth_bits-1:0] RES_write_address, 	// matrix_multiply_0 -> RES_RAM. Possibly reg.
-		output [width-1:0] RES_write_data_in 			// matrix_multiply_0 -> RES_RAM. Possibly reg.
+		output reg RES_write_en, 							// matrix_multiply_0 -> RES_RAM. Possibly reg.
+		output reg [RES_depth_bits-1:0] RES_write_address, 	// matrix_multiply_0 -> RES_RAM. Possibly reg.
+		output reg [width-1:0] RES_write_data_in 			// matrix_multiply_0 -> RES_RAM. Possibly reg.
 	);
-	
+
+	localparam NUMBER_OF_A_WORDS = 2**A_depth_bits;
+	localparam NUMBER_OF_B_WORDS = 2**B_depth_bits;
+	localparam NUMBER_OF_INPUT_WORDS  = NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS;	// Total number of input data.
+	localparam NUMBER_OF_OUTPUT_WORDS = 2**RES_depth_bits;	                    // Total number of output data
+
+	// Traversal along A(mxn) and B(nx1) matrices
+	localparam m = 2;                                    // Note matrices 1-indexed
+	localparam n = 4;                                    // Note matrices 1-indexed
+	reg [$clog2(m):0] A_row_traversal = 0;               // Traversing along the m rows of A. Note 0-indexed.
+	reg [$clog2(n)-1:0] A_column_B_row_traversal = 0;    // A and B can share the same counter (since both are n). Note 0-indexed.
+
+	// For A(mxn)*B(nx1), each element of A&B is 8-bit unsigned number
+	// Therefore when computing A*B, we need minimally 16-bit unsigned number
+	// Then, we sum (A*B) n times. Assuming n=4, 16-bits is sufficient to hold it
+	localparam MAXIMAL_SUM_BITS = 16;
+	reg [MAXIMAL_SUM_BITS-1:0] sum = 16'b0;
+	reg is_pipeline_filling = 1;
+	reg [$clog2(n):0] count_sums = 0;    // We expect do to n summations when computing (Amn)*(Bn1) for some m
+	reg [$clog2(m):0] which_row = 0;     // (Amn)*(Bn1) yields C(m1) matrix, thus this tracks which mth row of C to place result
+
 	// implement the logic to read A_RAM, read B_RAM, do the multiplication and write the results to RES_RAM
 	// Note: A_RAM and B_RAM are to be read synchronously. Read the wiki for more details.
+	always @(posedge clk) begin
+		if (Start == 1) begin
+			// Enable reading of RAM
+			A_read_en <= 1;
+			B_read_en <= 1;
 
-	assign Done = Start; // dummy code. Change as appropriate.
+			// Due to pipeline design, fetched data will arrive on every cycle (from Cycle 3 onwards)
+			if (!is_pipeline_filling) begin
+				sum <= sum + (A_read_data_out * B_read_data_out);
+				count_sums <= count_sums + 1;
+
+				// Check if we need to write to RES RAM
+				if (count_sums == n-1) begin
+					RES_write_en <= 1;
+					RES_write_address <= which_row;
+					RES_write_data_in <= sum + (A_read_data_out * B_read_data_out);
+
+					// Reset for next entry into RES RAM
+					count_sums <= 0;
+					which_row <= which_row + 1;
+					sum <= 0;
+				end
+				else begin
+					RES_write_en <= 0;
+				end
+
+				// Check if done with Matrix Multiplication (not just traversing it!)
+				if (which_row == m) begin
+					// (Aij)*B(i1), we have traversed all (ij). Thus Matrix-Multiplication is complete
+					// Reset everything, signal DONE to State Machine outside
+					A_read_en <= 0;
+					B_read_en <= 0;
+
+					A_row_traversal <= 0;
+					A_column_B_row_traversal <= 0;
+					is_pipeline_filling <= 1;
+					sum <= 0;
+					count_sums <= 0;
+					which_row <= 0;
+
+					Done <= 1;
+				end
+			end
+
+			// TRAVERSAL for Matrix Multiplication (Row-Column style)
+			begin
+				if (A_row_traversal != m) begin
+					// Send request to RAM
+					A_read_address <= (n * A_row_traversal) + (A_column_B_row_traversal);
+					B_read_address <= A_column_B_row_traversal;
+
+					// read_address takes 1 clock cycle to propagate to RAM
+					// RAM furthur requires 1 clock cycle to output read data
+					// i.e We need 2 cycles to fill our pipeline
+					if (A_row_traversal == 0 && A_column_B_row_traversal == 0) begin
+						is_pipeline_filling <= 1;
+					end
+					else begin
+						is_pipeline_filling <= 0;
+					end
+
+					// Prepare to send ANOTHER request to RAM in next cycle
+					if (A_column_B_row_traversal != n-1) begin
+						// A(ij)*B(j1), continue summing along ith row
+						A_column_B_row_traversal <= A_column_B_row_traversal + 1;
+					end
+					else begin
+						// A(ij)*B(j1), ith row is completed
+						A_column_B_row_traversal <= 0;
+						A_row_traversal <= A_row_traversal + 1;
+					end
+				end
+			end
+		end 
+	end
 
 endmodule
-
-
