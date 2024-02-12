@@ -56,7 +56,7 @@ module myip_v1_0
 	input					S_AXIS_TVALID;  // Data in is valid
 	// master out interface
 	output	reg				M_AXIS_TVALID;  // Data out is valid
-	output	reg [31 : 0]	M_AXIS_TDATA;   // Data Out
+	output	wire [31 : 0]	M_AXIS_TDATA;   // Data Out
 	output	reg				M_AXIS_TLAST;   // Optional data out qualifier
 	input					M_AXIS_TREADY;  // Connected slave device is ready to accept data out
 
@@ -93,13 +93,13 @@ module myip_v1_0
 	wire	RES_write_en;							// matrix_multiply_0 -> RES_RAM.
 	wire	[RES_depth_bits-1:0] RES_write_address;	// matrix_multiply_0 -> RES_RAM.
 	wire	[width-1:0] RES_write_data_in;			// matrix_multiply_0 -> RES_RAM.
-	wire	RES_read_en;  							// myip_v1_0 -> RES_RAM. To be assigned within myip_v1_0. Possibly reg.
-	wire	[RES_depth_bits-1:0] RES_read_address;	// myip_v1_0 -> RES_RAM. To be assigned within myip_v1_0. Possibly reg.
+	reg	    RES_read_en;  							// myip_v1_0 -> RES_RAM. To be assigned within myip_v1_0. Possibly reg.
+	reg	    [RES_depth_bits-1:0] RES_read_address;	// myip_v1_0 -> RES_RAM. To be assigned within myip_v1_0. Possibly reg.
 	wire	[width-1:0] RES_read_data_out;			// RES_RAM -> myip_v1_0
 	
 	// wires (or regs) to connect to matrix_multiply for assignment 1
-	wire	Matrix_Start; 								// myip_v1_0 -> matrix_multiply_0. To be assigned within myip_v1_0. Possibly reg.
-	wire	Matrix_Done;								// matrix_multiply_0 -> myip_v1_0. 
+	reg	Matrix_Start; 							 	// myip_v1_0 -> matrix_multiply_0. To be assigned within myip_v1_0. Possibly reg.
+	wire Matrix_Done;							    // matrix_multiply_0 -> myip_v1_0. 
 			
 	// Define the states of state machine (one hot encoding)
 	reg [3:0] state;
@@ -108,14 +108,12 @@ module myip_v1_0
 	localparam Compute = 4'b0010;
 	localparam Write_Outputs  = 4'b0001;
 
-	// Accumulator to hold sum of inputs read at any point in time
-	reg [31:0] sum;
-
 	// Counters to store the number inputs read & outputs written.
 	// Could be done using the same counter if reads and writes are not overlapped (i.e., no dataflow optimization)
 	// Left as separate for ease of debugging
 	reg [$clog2(NUMBER_OF_INPUT_WORDS) - 1:0] read_counter;
-	reg [$clog2(NUMBER_OF_OUTPUT_WORDS) - 1:0] write_counter;
+	reg [$clog2(NUMBER_OF_OUTPUT_WORDS):0] write_counter;
+	localparam NUM_CYCLES_FILL_RES_RAM_PIPELINE = 2;
 
    // CAUTION:
    // The sequence in which data are read in and written out should be
@@ -123,7 +121,7 @@ module myip_v1_0
 
 // STATE MACHINE implemented as a single-always Moore machine
 // a Mealy machine that asserts S_AXIS_TREADY and captures S_AXIS_TDATA etc can save a clock cycle
-	assign Matrix_Start = (state == Compute);
+	assign M_AXIS_TDATA = RES_read_data_out;
 
 	always @(posedge ACLK) 
 	begin
@@ -137,11 +135,11 @@ module myip_v1_0
 		begin
 			case (state)
 
+
 				Idle:
 				begin
 					read_counter 	<= 0;
-					write_counter 	<= 0;
-					sum          	<= 0;
+					write_counter <= 0;
 					S_AXIS_TREADY 	<= 0;
 					M_AXIS_TVALID 	<= 0;
 					M_AXIS_TLAST  	<= 0;
@@ -155,8 +153,10 @@ module myip_v1_0
 					end
 				end
 
+
 				Read_Inputs:
 				begin
+					Matrix_Start <= 0;
 					S_AXIS_TREADY 	<= 1;
 
 					// NOTE: read_counter is effectively 1-indexed
@@ -188,53 +188,97 @@ module myip_v1_0
 					if (read_counter == NUMBER_OF_INPUT_WORDS)
 					begin
 						// RAM_A & RAM_B filled, can begin Matrix Multiplication
-						B_write_en <= 0;
-						state      		<= Compute;
 						S_AXIS_TREADY 	<= 0;	// SLAVE->MASTER: Indication from SLAVE to MASTER that SLAVE not accepting data
+						state      		<= Compute;
+						Matrix_Start    <= 1;   // Pulse Matrix_Start to begin 'Compute' phase
+						B_write_en <= 0;
+						read_counter <= 0;
 					end
 					else begin
 						// Still continue filling RAM_A/RAM_B
 						read_counter 	<= read_counter + 1;
 					end
 				end
-            
+
+
+				// Begin 'Compute' phase if Matrix_Start is pulsed
 				Compute:
 				begin
+					Matrix_Start <= 0;             // De-pulse Matrix_Start (we only hold it HIGH for 1 cycle)
+
 					if (Matrix_Done) begin
 						// Finished computing when Matrix Multiply signals DONE
-						state <= Write_Outputs;
+						state <= Write_Outputs;    // This will cause Matrix_Start to be deasserted as well
 					end
 
-					// Possible to save a cycle by asserting M_AXIS_TVALID and presenting M_AXIS_TDATA just before going into 
-					// Write_Outputs state. However, need to adjust write_counter limits accordingly
+					// Possible to save a cycle by asserting M_AXIS_TVALID and presenting M_AXIS_TDATA just before going into Write_Outputs state.
 					// Alternatively, M_AXIS_TVALID and M_AXIS_TDATA can be asserted combinationally to save a cycle.
 				end
-			
+
+
+				/*
+				0th clock cycle
+					- Request for 0th element in RES RAM
+
+				1st clock cycle
+					- Request for 1st element in RES RAM
+					- RES RAM receives request for 0th element
+						- RES RAM will output 0th element in next cycle
+					- M_AXIS_TVALID signalled to be pulled high on next cycle
+
+				2nd clock cycle
+					- 0th element arrives (outputs to M_AXIS_TDATA)
+					- RES RAM receives request for 1st element
+						- RES RAM will output 1st element in next cycle
+					- M_AXIS_TVALID pulled high
+					- M_AXIS_TLAST signalled to be pulled high on next cycle
+
+				3rd clock cycle
+					- 1st element arrives (outputs to M_AXIS_TDATA)
+					- M_AXIS_TLAST pulled high
+					- M_AXIS_TLAST signalled to be pulled low on next cycle
+					- M_AXIS_TVALID signalled to be pulled low on next cycle
+					- RES_read_en signalled to be pulled low on next cycle
+
+				4th clock cycle
+					- Transit to Idle
+				*/
+
+				// Contents of RES RAM to be sent out through M_AXIS_TDATA (We must read RAM synchronously!)
 				Write_Outputs:
 				begin
-					M_AXIS_TVALID	<= 1;
-					M_AXIS_TDATA	<= sum + write_counter;
-					// Coprocessor function (adding 1 to sum in each iteration = adding iteration count to sum) happens here (partly)
-					if (M_AXIS_TREADY == 1) 
-					begin
-						if (write_counter == NUMBER_OF_OUTPUT_WORDS-1)
-						begin
-							state	<= Idle;
-							M_AXIS_TLAST	<= 1;
+					// MASTER->SLAVE: Master is sending valid data from 2nd cycle onwards (since we need to wait for RES RAM)
+					// Note, M_AXIS_TVALID will be deasserted in IDLE stage
+					M_AXIS_TVALID <= (write_counter >= NUM_CYCLES_FILL_RES_RAM_PIPELINE-1) ? 1 : 0;
+					RES_read_en <= 1;          // Enable reading of RES RAM in the next cycle
+
+					if (M_AXIS_TREADY == 1) begin    // SLAVE->MASTER: Slave is ready to accept data
+						if (write_counter == NUMBER_OF_OUTPUT_WORDS) begin
 							// M_AXIS_TLAST, though optional in AXIS, is necessary in practice as AXI Stream FIFO and AXI DMA expects it.
+							M_AXIS_TLAST <= 1; 
 						end
-						else
-						begin
-							write_counter	<= write_counter + 1;
+						else begin
+							// 1 cycle for RES_read_address to update
+							// Another 1 cycle for RES RAM to produce read_data_out
+							// M_AXIS_TDATA is ASSIGNED to RES_read_data_out
+							RES_read_address <= write_counter;
+							write_counter <= write_counter + 1;
+						end
+
+						if (M_AXIS_TLAST == 1) begin
+							state <= Idle;
+							M_AXIS_TLAST <= 0;
+							M_AXIS_TVALID <= 0;
+							RES_read_en <= 0;
 						end
 					end
 				end
 			endcase
 		end
 	end
-	   
+
+
 	// Connection to sub-modules / components for assignment 1
-	
 	memory_RAM 
 	#(
 		.width(width), 
@@ -308,4 +352,3 @@ module myip_v1_0
 	);
 
 endmodule
-

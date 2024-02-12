@@ -61,15 +61,23 @@ module matrix_multiply
 	reg [$clog2(n):0] count_sums = 0;    // We expect do to n summations when computing (Amn)*(Bn1) for some m
 	reg [$clog2(m):0] which_row = 0;     // (Amn)*(Bn1) yields C(m1) matrix, thus this tracks which mth row of C to place result
 
+	reg [MAXIMAL_SUM_BITS-1:0] before_trim = 16'b0;
+
+	reg is_multiplying = 0;
+	always @(Start) begin
+		if (Start == 1) is_multiplying = 1;
+	end
+
 	// implement the logic to read A_RAM, read B_RAM, do the multiplication and write the results to RES_RAM
 	// Note: A_RAM and B_RAM are to be read synchronously. Read the wiki for more details.
 	always @(posedge clk) begin
-		if (Start == 1) begin
+		if (is_multiplying == 1) begin
 			// Enable reading of RAM
 			A_read_en <= 1;
 			B_read_en <= 1;
 
 			// Due to pipeline design, fetched data will arrive on every cycle (from Cycle 3 onwards)
+			// Hence, since the pipeline requires 2 cycles to fill, we stall the pipeline ONCE (from Cycle 2-> Cycle 3)
 			if (!is_pipeline_filling) begin
 				sum <= sum + (A_read_data_out * B_read_data_out);
 				count_sums <= count_sums + 1;
@@ -78,7 +86,8 @@ module matrix_multiply
 				if (count_sums == n-1) begin
 					RES_write_en <= 1;
 					RES_write_address <= which_row;
-					RES_write_data_in <= sum + (A_read_data_out * B_read_data_out);
+					before_trim <=  sum + A_read_data_out * B_read_data_out;
+					RES_write_data_in <= (sum + (A_read_data_out * B_read_data_out)) >> 8;    // Divide the FINAL SUM by 256
 
 					// Reset for next entry into RES RAM
 					count_sums <= 0;
@@ -104,6 +113,7 @@ module matrix_multiply
 					which_row <= 0;
 
 					Done <= 1;
+					is_multiplying <= 0;
 				end
 			end
 
@@ -137,6 +147,11 @@ module matrix_multiply
 				end
 			end
 		end 
+		else begin
+			// We enter here if we are done with matrix multiplication
+			// De-pulse the 'Done' signal that we raised previously
+			Done <= 0;
+		end
 	end
 
 endmodule
