@@ -61,16 +61,19 @@ module matrix_multiply
 	reg [$clog2(n):0] count_sums = 0;    // We expect do to n summations when computing (Amn)*(Bn1) for some m
 	reg [$clog2(m):0] which_row = 0;     // (Amn)*(Bn1) yields C(m1) matrix, thus this tracks which mth row of C to place result
 
-	reg [MAXIMAL_SUM_BITS-1:0] before_trim = 16'b0;
-
 	reg is_multiplying = 0;
-	always @(Start) begin
-		if (Start == 1) is_multiplying = 1;
-	end
+	reg [MAXIMAL_SUM_BITS-1:0] before_trim = 16'b0;    // TODO: Debugging purposes
 
 	// implement the logic to read A_RAM, read B_RAM, do the multiplication and write the results to RES_RAM
 	// Note: A_RAM and B_RAM are to be read synchronously. Read the wiki for more details.
 	always @(posedge clk) begin
+
+		// Start is pulsed for 1 cycle -> Triggers matrixMultiplication to run
+		if (Start && !is_multiplying) is_multiplying <= 1;
+		// Done is pulsed for 1 cycle -> Triggers matrixMultiplication to stop
+		if (Done && !is_multiplying) Done <= 0;
+
+		// Matrix-Multiplication
 		if (is_multiplying == 1) begin
 			// Enable reading of RAM
 			A_read_en <= 1;
