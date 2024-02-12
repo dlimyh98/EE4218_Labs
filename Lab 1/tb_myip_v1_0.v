@@ -55,8 +55,7 @@ module tb_myip_v1_0(
 	localparam NUMBER_OF_INPUT_WORDS  = NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS;	// Total number of input data.
 	localparam NUMBER_OF_OUTPUT_WORDS = 2**RES_depth_bits;	                    // Total number of output data
 
-	localparam NUMBER_OF_TEST_VECTORS  = 1;  // number of such test vectors (cases)
-           
+	localparam NUMBER_OF_TEST_VECTORS  = 2;  // number of such test vectors (cases)
 	reg [width-1:0] test_input_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_INPUT_WORDS-1];
 	reg [width-1:0] test_result_expected_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS-1];
 	reg [width-1:0] result_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS-1];    // same size as test_result_expected_memory
