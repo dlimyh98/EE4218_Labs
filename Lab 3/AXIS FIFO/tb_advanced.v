@@ -81,6 +81,10 @@ module tb_advanced(
     initial begin
         #25                       // Just as main driver pulls reset to low
         M_AXIS_TREADY = 1'b0;	  // Not ready to receive data from the co-processor yet.   
+
+        // At 53225ns, M_AXIS_TREADY is pulled high in main driver (hardcoded by looking at sim waveform)
+        #53400 M_AXIS_TREADY = 1'b0;
+        #300 M_AXIS_TREADY = 1'b1;
     end
 
 
@@ -122,16 +126,18 @@ module tb_advanced(
             /******************************** COPROCESSOR AS MASTER, SENDING ********************************/
             // Note: result_memory is not written at a clock edge, which is fine as it is just a testbench construct and not actual hardware
             word_cnt = 0;
-            M_AXIS_TREADY = 1'b1;	// we are now ready to receive data
-            while(M_AXIS_TLAST | ~M_AXIS_TLAST_prev) begin // receive data until the falling edge of M_AXIS_TLAST
+            M_AXIS_TREADY = 1'b1;	// Testbench is ready to receive data
+
+            while(M_AXIS_TLAST | ~M_AXIS_TLAST_prev) begin    // Testbench receives data until the falling edge of M_AXIS_TLAST
                 if(M_AXIS_TVALID) begin
                     result_memory[word_cnt+test_case_cnt*NUMBER_OF_OUTPUT_WORDS] = M_AXIS_TDATA;
                     word_cnt = word_cnt+1;
                 end
                 #100;
-            end						// receive loop
-            M_AXIS_TREADY = 1'b0;	// not ready to receive data from the co-processor anymore.				
-        end							// next test vector
+            end						
+
+            M_AXIS_TREADY = 1'b0;	// Testbench not ready to receive data
+        end							
 
 
         // Checking correctness of results

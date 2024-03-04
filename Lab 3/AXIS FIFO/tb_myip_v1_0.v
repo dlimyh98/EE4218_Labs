@@ -46,16 +46,16 @@ module tb_myip_v1_0(
                 .M_AXIS_TREADY(M_AXIS_TREADY)
 	);
 
-	localparam A_depth_bits = 3;  	// 8 elements (A is a 2x4 matrix)
-	localparam B_depth_bits = 2; 	// 4 elements (B is a 4x1 matrix)
-	localparam RES_depth_bits = 1;	// 2 elements (RES is a 2x1 matrix)
+	localparam A_depth_bits = 9;  	// A is a 64x8 matrix
+	localparam B_depth_bits = 3; 	// B is a 8x1 matrix
+	localparam RES_depth_bits = 6;	// RES is a 64x1 matrix
 	localparam width = 8;			// all 8-bit data
 	localparam NUMBER_OF_A_WORDS = 2**A_depth_bits;
 	localparam NUMBER_OF_B_WORDS = 2**B_depth_bits;
 	localparam NUMBER_OF_INPUT_WORDS  = NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS;	// Total number of input data.
 	localparam NUMBER_OF_OUTPUT_WORDS = 2**RES_depth_bits;	                    // Total number of output data
 
-	localparam NUMBER_OF_TEST_VECTORS  = 2;  // number of such test vectors (cases)
+	localparam NUMBER_OF_TEST_VECTORS  = 1;  // number of such test vectors (cases)
 	reg [width-1:0] test_input_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_INPUT_WORDS-1];
 	reg [width-1:0] test_result_expected_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS-1];
 	reg [width-1:0] result_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS-1];    // same size as test_result_expected_memory
