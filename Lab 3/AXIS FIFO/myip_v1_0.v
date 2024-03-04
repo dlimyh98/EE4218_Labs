@@ -64,10 +64,10 @@ module myip_v1_0
 // Implementation Section
 //----------------------------------------
 
-// RAM parameters for assignment 1
-	localparam A_depth_bits = 3;  	// 8 elements (A is a 2x4 matrix)
-	localparam B_depth_bits = 2; 	// 4 elements (B is a 4x1 matrix)
-	localparam RES_depth_bits = 1;	// 2 elements (RES is a 2x1 matrix)
+// RAM parameters
+	localparam A_depth_bits = 9;  	// A is a 64x8 matrix
+	localparam B_depth_bits = 3; 	// B is a 8x1 matrix
+	localparam RES_depth_bits = 6;	// RES is a 64x1 matrix
 	localparam width = 8;			// all 8-bit data
 	localparam NUMBER_OF_A_WORDS = 2**A_depth_bits;
 	localparam NUMBER_OF_B_WORDS = 2**B_depth_bits;
@@ -135,11 +135,10 @@ module myip_v1_0
 		begin
 			case (state)
 
-
 				Idle:
 				begin
 					read_counter 	<= 0;
-					write_counter <= 0;
+					write_counter   <= 0;
 					S_AXIS_TREADY 	<= 0;
 					M_AXIS_TVALID 	<= 0;
 					M_AXIS_TLAST  	<= 0;
@@ -157,12 +156,10 @@ module myip_v1_0
 				Read_Inputs:
 				begin
 					Matrix_Start <= 0;
-					S_AXIS_TREADY 	<= 1;
 
-					// NOTE: read_counter is effectively 1-indexed
-					// First element of S_AXIS_TDATA comes in just before read_counter == 1. (i.e read_counter == 0 is unused)
-					if (S_AXIS_TVALID == 1)    // Transaction only occurs if TREADY & TVALID are asserted simultaneously
-					begin
+					if (S_AXIS_TVALID == 1) begin    // Transaction only occurs if TREADY & TVALID are asserted simultaneously
+						S_AXIS_TREADY <= 1;
+
 						// Read and store values into RAM (RAM_A & RAM_B) first
 						if (read_counter < NUMBER_OF_A_WORDS) begin
 							// Incoming data belongs to 'A' matrix
@@ -176,12 +173,23 @@ module myip_v1_0
 							B_write_address <= read_counter - NUMBER_OF_A_WORDS;
 							B_write_data_in <= S_AXIS_TDATA[width-1:0];
 						end
+
+						// Still continue filling RAM_A/RAM_B
+						// Note we will keep filling as long as not last element
+						read_counter <= read_counter + 1;
+					end
+					else begin
+						// S_AXIS_TVALID is deasserted
+						// Slave should not be accepting data. Testbench will stop setting and sending S_AXIS_TDATA
+						S_AXIS_TREADY <= 0;
+
 					end
 
 					/*
 					Potential problem : S_AXIS_TVALID is deasserted while we still need to write to RAM
-					i.e We have captured the value of S_AXIS_TDATA already, but we still need an additional 1 clock cycle to write to RAM
-					    Hence, B_write_en <= 0 and State <= Compute must be OUTSIDE of the check for S_AXIS_TVALID
+					i.e - We have captured the value of S_AXIS_TDATA already, but we still need an additional 1 clock cycle to write to RAM
+					    - Hence, B_write_en <= 0 and State <= Compute must be OUTSIDE of the check for S_AXIS_TVALID, to ensure that the last value is
+						  captured in B_RAM
 					*/
 
 					// If we are expecting a variable number of words, we should make use of S_AXIS_TLAST.
@@ -193,10 +201,6 @@ module myip_v1_0
 						Matrix_Start    <= 1;   // Pulse Matrix_Start to begin 'Compute' phase
 						B_write_en <= 0;
 						read_counter <= 0;
-					end
-					else begin
-						// Still continue filling RAM_A/RAM_B
-						read_counter 	<= read_counter + 1;
 					end
 				end
 

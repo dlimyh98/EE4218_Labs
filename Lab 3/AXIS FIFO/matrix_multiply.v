@@ -47,22 +47,22 @@ module matrix_multiply
 	localparam NUMBER_OF_OUTPUT_WORDS = 2**RES_depth_bits;	                    // Total number of output data
 
 	// Traversal along A(mxn) and B(nx1) matrices
-	localparam m = 2;                                    // Note matrices 1-indexed
-	localparam n = 4;                                    // Note matrices 1-indexed
-	reg [$clog2(m):0] A_row_traversal = 0;               // Traversing along the m rows of A. Note 0-indexed.
-	reg [$clog2(n)-1:0] A_column_B_row_traversal = 0;    // A and B can share the same counter (since both are n). Note 0-indexed.
+	localparam m = 64;                                    // Note matrices 1-indexed
+	localparam n = 8;                                     // Note matrices 1-indexed
+	reg [$clog2(m):0] A_row_traversal = 0;                // Traversing along the m rows of A. Note 0-indexed.
+	reg [$clog2(n)-1:0] A_column_B_row_traversal = 0;     // A and B can share the same counter (since both are n). Note 0-indexed.
 
-	// For A(mxn)*B(nx1), each element of A&B is 8-bit unsigned number
-	// Therefore when computing A*B, we need minimally 16-bit unsigned number
-	// Then, we sum (A*B) n times. Assuming n=4, 16-bits is sufficient to hold it
-	localparam MAXIMAL_SUM_BITS = 16;
-	reg [MAXIMAL_SUM_BITS-1:0] sum = 16'b0;
+	// For A(mxn)*B(nx1), each element of A&B is 8-bit unsigned number (maximal value 255)
+	// Therefore when computing A*B, we need minimally 16-bit unsigned number (to store 255*255)
+	// Then, we sum (A*B) n times. Assuming n=8, 19-bits is sufficient to hold it. Lets just put 32bits
+	localparam MAXIMAL_SUM_BITS = 32;
+	reg [MAXIMAL_SUM_BITS-1:0] sum = 32'b0;
 	reg is_pipeline_filling = 1;
 	reg [$clog2(n):0] count_sums = 0;    // We expect do to n summations when computing (Amn)*(Bn1) for some m
 	reg [$clog2(m):0] which_row = 0;     // (Amn)*(Bn1) yields C(m1) matrix, thus this tracks which mth row of C to place result
 
 	reg is_multiplying = 0;
-	reg [MAXIMAL_SUM_BITS-1:0] before_trim = 16'b0;    // TODO: Debugging purposes
+	reg [MAXIMAL_SUM_BITS-1:0] before_trim = 32'b0;    // Debugging purposes
 
 	// implement the logic to read A_RAM, read B_RAM, do the multiplication and write the results to RES_RAM
 	// Note: A_RAM and B_RAM are to be read synchronously. Read the wiki for more details.
