@@ -5,23 +5,38 @@
 #include "xil_cache.h"
 #include "xllfifo.h"
 #include "xstatus.h"
+#include "xscugic.h"
 
+/***************************** Polling/Interrupt *********************************/
+//#define POLLING_MODE
 
 /***************** Macros *********************/
+#define FIFO_DEV_ID     XPAR_AXI_FIFO_0_DEVICE_ID        // AXI_FIFO_MM_S_0 peripheral
+#define INTC_DEVICE_ID  XPAR_SCUGIC_SINGLE_DEVICE_ID     // SCUGIC
+#define FIFO_INTR_ID    XPAR_FABRIC_LLFIFO_0_VEC_ID      // AXI_FIFO_MM_S_0 fabric interrupt
+
+#define INTERRUPT_PRIORITY      160
+#define RISING_EDGE_SENSIIVE    3
+#define NUM_RX_PACKETS_EXPECTED 1
+
+#define WORD_SIZE_IN_BYTES 4
 #define NUMBER_OF_INPUT_WORDS 520
 #define NUMBER_OF_OUTPUT_WORDS 64
 #define NUMBER_OF_TEST_VECTORS 1
 #define A_NUM_ROWS 64
 #define A_NUM_COLS 8
-
-#define FIFO_DEV_ID	   	XPAR_AXI_FIFO_0_DEVICE_ID
-#define TIMEOUT_VALUE 1<<20; // timeout for reception
+#define TIMEOUT_VALUE 1<<20
 
 /************************** Variable Definitions *****************************/
 u16 DeviceId = FIFO_DEV_ID;
-XLlFifo FifoInstance; 	              // Device instance
-XLlFifo *InstancePtr = &FifoInstance; // Device pointer
+XLlFifo FifoInstance; 	                // Device instance
+XLlFifo* InstancePtr = &FifoInstance;   // Device pointer
 
+static XScuGic IntC;                    // Interrupt Controller instance
+volatile int TX_done = 0;
+volatile int packets_received = 0;
+
+int test_case_cnt = 0;
 int test_input_memory [NUMBER_OF_TEST_VECTORS*NUMBER_OF_INPUT_WORDS] =  {0xa0,0x81,0x68,0x47,0xb8,0xc1,0x37,0x56,
 0x27,0x1f,0x91,0x96,0x20,0x41,0x5a,0x2d,
 0x99,0x9f,0x5d,0x18,0x95,0x88,0x6c,0x3d,
@@ -87,7 +102,6 @@ int test_input_memory [NUMBER_OF_TEST_VECTORS*NUMBER_OF_INPUT_WORDS] =  {0xa0,0x
 0x6f,0x50,0x73,0x6c,0x65,0x72,0x76,0x2d,
 0x8d,0x90,0x92,0x42,0x9d,0xd8,0x58,0x9f,
 0x4b,0x42,0x39,0x00,0x01,0x2e,0x0e,0x25};
-
 int result_memory [NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS] = {0x9a,0x4a,0x92,0x77,0x4e,0xa0,0xaf,0x59,
 0x58,0x54,0x5c,0xa2,0x91,0x5c,0x62,0x86,
 0xa3,0xb8,0x67,0xb1,0x86,0x3c,0xaa,0x53,
@@ -96,99 +110,282 @@ int result_memory [NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS] = {0x9a,0x4a,0
 0xc4,0xab,0x8c,0x6d,0x58,0x5a,0xb7,0x86,
 0x45,0x69,0xb9,0x9e,0xd9,0x27,0x4e,0x7c,
 0xbc,0xa9,0xb9,0xc4,0x91,0xba,0x70,0xb2};
-
 int test_result_expected_memory [NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS];
 
 /************************** Function Definitions *****************************/
-int initialize();
-void set_expected_memory();
+static void fifo_interrupt_handler();
+int transmit();
+int receive();
 
+int initialize_base_system();
+int initialize_interrupts();
+void set_expected_memory();
+int verify();
 
 /*****************************************************************************
 * Main function
 ******************************************************************************/
 int main()
 {
-	int Status = XST_SUCCESS;
-	int word_cnt, test_case_cnt = 0;
-	int success;
-
-	int init_status = initialize();
-	if (init_status == XST_FAILURE) return XST_FAILURE;
+	int status;
 	set_expected_memory();
 
-	for (test_case_cnt=0 ; test_case_cnt < NUMBER_OF_TEST_VECTORS ; test_case_cnt++){
-		/******************** Input to Coprocessor : Transmit the Data Stream ***********************/
-		xil_printf(" Transmitting Data for test case %d ... \r\n", test_case_cnt);
+	status = initialize_base_system();
+	if (status == XST_FAILURE) {
+        xil_printf("Failed base initialization\n");
+        return XST_FAILURE;
+    }
 
-		/* Writing into the FIFO Transmit Port Buffer */
-		for (word_cnt=0 ; word_cnt < NUMBER_OF_INPUT_WORDS ; word_cnt++){
-			if( XLlFifo_iTxVacancy(InstancePtr) ){
-                // We set AXIS FIFO depth to 1024 in Vivado, so it can comfortably send NUMBER_OF_INPUT_WORDS over
-				XLlFifo_TxPutWord(InstancePtr, test_input_memory[word_cnt+test_case_cnt*NUMBER_OF_INPUT_WORDS]);
-			}
-		}
+    #ifndef POLLING_MODE
+        status = initialize_interrupts();
+        if (status != XST_SUCCESS) {
+            xil_printf("Failed interrupt initialization\n");
+            return XST_FAILURE;
+        } else {
+            // Enable AXIS_FIFO with choice of interrupts
+            XLlFifo_IntEnable(InstancePtr, XLLF_INT_TC_MASK|XLLF_INT_RC_MASK);
+        }
+    #endif
 
-		/* Start Transmission by writing transmission length (number of bytes = 4* number of words) into the TLR */
-		XLlFifo_iTxSetLen(InstancePtr, 4*NUMBER_OF_INPUT_WORDS);
 
-		/* Check for Transmission completion */
-		while( !(XLlFifo_IsTxDone(InstancePtr)) ) {}
-		/* Transmission Complete */
+	for (; test_case_cnt < NUMBER_OF_TEST_VECTORS; test_case_cnt++) {
+        /********************* TX *********************/
+        status = transmit();
+        if (status != XST_SUCCESS) {
+            xil_printf("TX error\n");
+            return XST_FAILURE;
+        }
 
-		/******************** Output from Coprocessor : Receive the Data Stream ***********************/
-		xil_printf(" Receiving data for test case %d ... \r\n", test_case_cnt);
+        // Polling mode: It blocks in transmit(), therefore will skip this while loop
+        // Interrupt mode: Do other work while waiting for TX completion
+        while (!TX_done) {
+            asm("NOP");
+        }
 
-		int timeout_count = TIMEOUT_VALUE;
-		// Check the number of 32-bit words avail from FIFO's RX, subject to a timeout
-		while(!XLlFifo_iRxOccupancy(InstancePtr)) {
-			timeout_count--;
-			if (timeout_count == 0)
-			{
-				xil_printf("Timeout while waiting for data ... \r\n");
-				return XST_FAILURE;
-			}
-		}
-
-		// we are expecting only one FRAME of data per test case. one packet = sequence of data until TLAST
-		// If more frames are expected from the coprocessor, the part below should be done in a loop.
-		u32 num_bytes_in_frame = XLlFifo_iRxGetLen(InstancePtr);
-
-        // Read one word at a time
-		for (word_cnt=0; word_cnt < num_bytes_in_frame/4; word_cnt++) {
-			result_memory[word_cnt+test_case_cnt*NUMBER_OF_OUTPUT_WORDS] = XLlFifo_RxGetWord(InstancePtr);
-		}
-
-		Status = XLlFifo_IsRxDone(InstancePtr);
-		if(Status != TRUE){
-			xil_printf("Failing in receive complete ... \r\n");
-			return XST_FAILURE;
-		}
-		/* Reception Complete */
+        /********************* RX *********************/
+        // Polling mode: Polling read of RDRO register
+        // Interrupt mode: Only read RDRO register when RC flag is raised
+        status = receive();
+        if (status != XST_SUCCESS) {
+            xil_printf("RX error\n");
+            return XST_FAILURE;
+        }
 	}
 
-	/************************** Checking correctness of results *****************************/
-	success = 1;
+
+    status = verify();
+    if (status != XST_SUCCESS) {
+        xil_printf("Verification fail\n");
+    }
+    else {
+        xil_printf("Verification success\n");
+    }
+
+	return status;
+}
+
+
+static void fifo_interrupt_handler() {
+    // Check which interrupt source was triggered
+    u32 Pending = XLlFifo_IntPending(InstancePtr);
+
+    // Clear ALL interrupts (there may be back-to-back interrupts)
+    while (Pending) {
+        if (Pending & XLLF_INT_TC_MASK) {
+            TX_done = 1;
+            XLlFifo_IntClear(InstancePtr, XLLF_INT_TC_MASK);
+        }
+        else if (Pending & XLLF_INT_RC_MASK) {
+            xil_printf("ISR's RC triggered\n");
+
+            /* ISR's RC flag is raised
+                - Indicates that at least one successful receive of packet(s) has completed
+                - Received packet's data and length are available
+                - Note this interrupt can represent MORE than one packet received
+                    We must check FIFO's RX occupancy to determine if we have additional received packets for processing
+            */
+
+            // Check the number of words (32-bit sized in our case) avail from FIFO's RX
+            // It tells is the number of locations in use for data storage in the FIFO's RX, after the most recent transaction
+            // Note this value is only updated after a packet is SUCCESSFULLY received
+            // Reads from RDRO register, https://docs.xilinx.com/r/en-US/pg080-axi-fifo-mm-s/Interrupt-Status-Register-ISR
+
+            while (XLlFifo_iRxOccupancy(InstancePtr)) {
+                // We are expecting only one packet from testbench per testcase
+                u32 received_length = XLlFifo_iRxGetLen(InstancePtr);
+
+                for (int word_cnt=0; word_cnt < received_length/WORD_SIZE_IN_BYTES; word_cnt++) {
+                        u32 RxWord = XLlFifo_RxGetWord(InstancePtr);
+                        result_memory[word_cnt+test_case_cnt*NUMBER_OF_OUTPUT_WORDS] = RxWord;
+                }
+            }
+
+            packets_received++;
+            XLlFifo_IntClear(InstancePtr, XLLF_INT_RC_MASK);
+        }
+        else {
+            // Shouldn't come here actually
+            XLlFifo_IntClear(InstancePtr, Pending);
+        }
+
+        // Check if any other queued interrupts
+		Pending = XLlFifo_IntPending(InstancePtr);
+    }
+}
+
+
+int receive() {
+    #ifdef POLLING_MODE
+        /******************** Output from Coprocessor : Receive the Data Stream ***********************/
+        xil_printf(" Receiving data for test case %d ... \r\n", test_case_cnt);
+
+        int timeout_count = TIMEOUT_VALUE;
+        // Check the number of words (32-bit sized in our case) avail from FIFO's RX, subject to a timeout
+        // It tells is the number of locations in use for data storage in the FIFO's RX, after the most recent transaction
+        // Note this value is only updated after a packet is SUCCESSFULLY received
+        // Reads from RDRO register, https://docs.xilinx.com/r/en-US/pg080-axi-fifo-mm-s/Interrupt-Status-Register-ISR
+        while(!XLlFifo_iRxOccupancy(InstancePtr)) {
+            timeout_count--;
+            if (timeout_count == 0)
+            {
+                xil_printf("Timeout while waiting for data ... \r\n");
+                return XST_FAILURE;
+            }
+        }
+        xil_printf("%d", XLlFifo_iRxOccupancy(InstancePtr));
+
+        // For AXIS, one PACKET = sequence of DATA until TLAST
+        // https://docs.xilinx.com/v/u/4.1-English/pg080-axi-fifo-mm-s -- Pg14, axi_str_rxd_tlast --> TLAST: Indicates boundary of a packet
+        // Thus, we expect only one PACKET of data per test case
+
+        // If more packets are expected from the coprocessor, the part below should be done in a loop.
+        // https://docs.xilinx.com/r/en-US/pg080-axi-fifo-mm-s/Receive-Length-Register-RLR
+        u32 num_bytes_in_packet = XLlFifo_iRxGetLen(InstancePtr);    // Reads from RLR register
+
+        // Read one word at a time
+        for (int word_cnt=0; word_cnt < num_bytes_in_packet/4; word_cnt++) {
+            result_memory[word_cnt+test_case_cnt*NUMBER_OF_OUTPUT_WORDS] = XLlFifo_RxGetWord(InstancePtr);
+        }
+
+        int Status = XLlFifo_IsRxDone(InstancePtr);
+        if(Status != TRUE){
+            xil_printf("Failing in receive complete ... \r\n");
+            return XST_FAILURE;
+        }
+        /* Reception Complete */
+    #else
+        while (packets_received != NUM_RX_PACKETS_EXPECTED) {
+            asm("NOP");
+        }
+
+        return XST_SUCCESS;
+    #endif
+}
+
+
+int transmit() {
+    int word_cnt = 0;
+
+    /******************** Input to Coprocessor : Transmit the Data Stream ***********************/
+    xil_printf(" Transmitting Data for test case %d ... \r\n", test_case_cnt);
+
+    // Writing into the FIFO Transmit Port Buffer
+    for (word_cnt=0; word_cnt < NUMBER_OF_INPUT_WORDS; word_cnt++) {
+        if( XLlFifo_iTxVacancy(InstancePtr) ){
+            // We set AXIS FIFO depth to 1024 (words) in Vivado, so it can comfortably fit NUMBER_OF_INPUT_WORDS
+            XLlFifo_TxPutWord(InstancePtr, test_input_memory[word_cnt+test_case_cnt*NUMBER_OF_INPUT_WORDS]);
+        }
+    }
+
+    // Kickoff transmission by declaring transmission length (in bytes)
+    XLlFifo_iTxSetLen(InstancePtr, WORD_SIZE_IN_BYTES*NUMBER_OF_INPUT_WORDS);
+
+    #ifdef POLLING_MODE
+        // POLLING check for TX completion, by checking the TC flag of ISR register
+        // How is this different from Interrupt mode? In Polling, the corresponding IER is NOT asserted
+        // Thus we need to keep polling the TC flag
+        while( !(XLlFifo_IsTxDone(InstancePtr)) ) {}
+        /* Transmission Complete */
+        return XST_SUCCESS;
+    #else
+        // When transmission completes, it will raise an interrupt
+        // Let our interrupt-handler settle it
+        return XST_SUCCESS;
+    #endif
+}
+
+
+int verify() {
+	int success = 1;
 
 	/* Compare the data send with the data received */
 	xil_printf(" Comparing data ...\r\n");
-	for(word_cnt=0; word_cnt < NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS; word_cnt++){
+	for (int word_cnt=0; word_cnt < NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS; word_cnt++) {
 		success = success & (result_memory[word_cnt] == test_result_expected_memory[word_cnt]);
 	}
 
 	if (success != 1){
-		xil_printf("Test Failed\r\n");
 		return XST_FAILURE;
 	}
 
-	xil_printf("Test Success\r\n");
+    return XST_SUCCESS;
+}
+
+
+int initialize_interrupts() {
+    /* https://support.xilinx.com/s/article/763748?language=en_US
+       1. In the IP block diagram, connect AXI-Stream FIFO's interrupt to Zynq MPSoC pl_ps_irq0[0:0]
+            - This interrupt belongs to the MPSoC's APU interrupts, specifically it is Interrupt Group 0
+            - Interrupts within Group 0 may be assigned to IRQ or FIQ (assignments occur internally within GICv2)
+
+       2. Initializing interrupts is application specific
+            - AXIS FIFO could be connected to processor with/without interrupt controller
+            - For MPSoC, I think it has an interrupt controller
+    */
+   int Status;
+
+   // Configuration for SCUGIC (System Controller Ultra Generic Interrupt Controller)
+   XScuGic_Config* IntcConfig;
+
+   // Lookup config data for the SCUGIC IP-core
+   IntcConfig = XScuGic_LookupConfig(INTC_DEVICE_ID);
+   if (IntcConfig == NULL) return XST_FAILURE;
+
+   // Initialize our SPECIFIC interrupt controller
+   Status = XScuGic_CfgInitialize(&IntC, IntcConfig,
+                             IntcConfig->CpuBaseAddress);
+   if (Status != XST_SUCCESS) return XST_FAILURE;
+
+   // Sets priority/trigger types for our SPECIFIED IRQ source
+   // I'm assuming FIFO_INTR_ID in this case refers to the IRQ from AXIS-FIFO
+   XScuGic_SetPriorityTriggerType(&IntC, (u16)FIFO_INTR_ID, 
+                            INTERRUPT_PRIORITY, RISING_EDGE_SENSIIVE);
+
+    // Connect our interrupt handler
+	Status = XScuGic_Connect(&IntC, (u16)FIFO_INTR_ID,
+				(Xil_InterruptHandler)fifo_interrupt_handler, InstancePtr);
+    if (Status != XST_SUCCESS) return Status;
+
+    // Enable the interrupt
+    XScuGic_Enable(&IntC, (u16)FIFO_INTR_ID);
+
+
+    // Register our interrupt controller handler with exception table
+    // Not sure why we need to do this, but it's in the example code
+    Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+		(Xil_ExceptionHandler)XScuGic_InterruptHandler,
+		(void*)&IntC);
+
+    // Enable exceptions
+	Xil_ExceptionEnable();
 
 	return XST_SUCCESS;
 }
 
 
-int initialize() {
-	int Status = XST_SUCCESS;
+int initialize_base_system() {
+	int Status;
 	XLlFifo_Config *Config;
 
 	/* Initialize the Device Configuration Interface driver */
