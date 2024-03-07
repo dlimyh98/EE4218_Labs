@@ -93,7 +93,7 @@ module myip_v1_0
 	wire	RES_write_en;							// matrix_multiply_0 -> RES_RAM.
 	wire	[RES_depth_bits-1:0] RES_write_address;	// matrix_multiply_0 -> RES_RAM.
 	wire	[width-1:0] RES_write_data_in;			// matrix_multiply_0 -> RES_RAM.
-	reg	    RES_read_en;  							// myip_v1_0 -> RES_RAM. To be assigned within myip_v1_0. Possibly reg.
+	reg	    RES_read_en = 0;  						// myip_v1_0 -> RES_RAM. To be assigned within myip_v1_0. Possibly reg.
 	reg	    [RES_depth_bits-1:0] RES_read_address;	// myip_v1_0 -> RES_RAM. To be assigned within myip_v1_0. Possibly reg.
 	wire	[width-1:0] RES_read_data_out;			// RES_RAM -> myip_v1_0
 	
@@ -111,8 +111,8 @@ module myip_v1_0
 	// Counters to store the number inputs read & outputs written.
 	// Could be done using the same counter if reads and writes are not overlapped (i.e., no dataflow optimization)
 	// Left as separate for ease of debugging
-	reg [$clog2(NUMBER_OF_INPUT_WORDS) - 1:0] read_counter;
-	reg [$clog2(NUMBER_OF_OUTPUT_WORDS):0] write_counter;
+	reg [$clog2(NUMBER_OF_INPUT_WORDS) - 1:0] read_counter = 0;
+	reg [$clog2(NUMBER_OF_OUTPUT_WORDS):0] write_counter = 0;
 	localparam NUM_CYCLES_FILL_RES_RAM_PIPELINE = 2;
 
    // CAUTION:
@@ -122,6 +122,9 @@ module myip_v1_0
 // STATE MACHINE implemented as a single-always Moore machine
 // a Mealy machine that asserts S_AXIS_TREADY and captures S_AXIS_TDATA etc can save a clock cycle
 	assign M_AXIS_TDATA = RES_read_data_out;
+
+	reg is_deasserted = 1'b1;
+	reg [$clog2(NUMBER_OF_OUTPUT_WORDS):0] write_counter_prev = 0;
 
 	always @(posedge ACLK) 
 	begin
@@ -182,7 +185,6 @@ module myip_v1_0
 						// S_AXIS_TVALID is deasserted
 						// Slave should not be accepting data. Testbench will stop setting and sending S_AXIS_TDATA
 						S_AXIS_TREADY <= 0;
-
 					end
 
 					/*
@@ -212,6 +214,8 @@ module myip_v1_0
 
 					if (Matrix_Done) begin
 						// Finished computing when Matrix Multiply signals DONE
+						//$display("About to change state, %0t", $time);
+						//$strobe("STROBE state, %0t 0h", $time, state);
 						state <= Write_Outputs;    // This will cause Matrix_Start to be deasserted as well
 					end
 
@@ -221,6 +225,8 @@ module myip_v1_0
 
 
 				/*
+				Assume that M_AXIS_TREADY is asserted by testbench already
+
 				0th clock cycle
 					- Request for 0th element in RES RAM
 
@@ -233,7 +239,6 @@ module myip_v1_0
 				2nd clock cycle
 					- 0th element arrives (outputs to M_AXIS_TDATA)
 					- RES RAM receives request for 1st element
-						- RES RAM will output 1st element in next cycle
 					- M_AXIS_TVALID pulled high
 					- M_AXIS_TLAST signalled to be pulled high on next cycle
 
@@ -242,7 +247,6 @@ module myip_v1_0
 					- M_AXIS_TLAST pulled high
 					- M_AXIS_TLAST signalled to be pulled low on next cycle
 					- M_AXIS_TVALID signalled to be pulled low on next cycle
-					- RES_read_en signalled to be pulled low on next cycle
 
 				4th clock cycle
 					- Transit to Idle
@@ -251,22 +255,45 @@ module myip_v1_0
 				// Contents of RES RAM to be sent out through M_AXIS_TDATA (We must read RAM synchronously!)
 				Write_Outputs:
 				begin
-					// MASTER->SLAVE: Master is sending valid data from 2nd cycle onwards (since we need to wait for RES RAM)
-					// Note, M_AXIS_TVALID will be deasserted in IDLE stage
-					M_AXIS_TVALID <= (write_counter >= NUM_CYCLES_FILL_RES_RAM_PIPELINE-1) ? 1 : 0;
-					RES_read_en <= 1;          // Enable reading of RES RAM in the next cycle
-
+					//$display("Entered write_outputs, %0t", $time);
 					if (M_AXIS_TREADY == 1) begin    // SLAVE->MASTER: Slave is ready to accept data
+						/*
+						 - MASTER->SLAVE: Master is sending valid data from 2nd cycle onwards (since we need to wait for RES RAM)
+						 - Master only begins the process of sending valid data, if Slave is ready to accept it. 
+						 - Actually Master can send data even if Slave is not ready (ie M_AXIS_TREADY not asserted)
+							- However, Master still needs to check if slave has received the previous data, before sending something new
+							- Therefore, instead of repeatedly sending the same data and checking if slave has received it before sending something new,
+							  we just check M_AXIS_TREADY
+
+						 - Note, M_AXIS_TVALID will be deasserted in IDLE stage
+						*/
+
+						M_AXIS_TVALID <= (write_counter >= NUM_CYCLES_FILL_RES_RAM_PIPELINE-1) ? 1 : 0;
+						//is_deasserted <= 1;
+
 						if (write_counter == NUMBER_OF_OUTPUT_WORDS) begin
 							// M_AXIS_TLAST, though optional in AXIS, is necessary in practice as AXI Stream FIFO and AXI DMA expects it.
+							// M_AXIS_TLAST tells AXI_S2MM DMA that a transaction (of a packet) is done 
+							// XAxiDma_SimpleTransfer() uses this to work properly
 							M_AXIS_TLAST <= 1; 
 						end
 						else begin
 							// 1 cycle for RES_read_address to update
 							// Another 1 cycle for RES RAM to produce read_data_out
 							// M_AXIS_TDATA is ASSIGNED to RES_read_data_out
+
+							//$display("DISP is_deasserted, %0h %0t", is_deasserted, $time);
+							//$strobe("STROBE is_deasserted, %0h %0t", is_deasserted, $time);
+
+							RES_read_en <= 1;
 							RES_read_address <= write_counter;
-							write_counter <= write_counter + 1;
+							write_counter <= write_counter+1;
+							write_counter_prev <= write_counter;
+
+							if (!is_deasserted) begin
+								$display("DISP RES_read_address, %0h %0t", RES_read_address, $time);
+								is_deasserted <= 1;
+							end
 						end
 
 						if (M_AXIS_TLAST == 1) begin
@@ -275,6 +302,46 @@ module myip_v1_0
 							M_AXIS_TVALID <= 0;
 							RES_read_en <= 0;
 						end
+					end
+					else begin
+						/*	- In Vivado waveform, we see that write_counter is 19 at 105_450ns
+								- But if M_AXIS_TREADY is pulled low at 105_450ns, then...
+									- We encounter "write_counter <= 19" at 105_450ns
+									- write_counter value only gets updated at end of time step
+									- Thus we should see write_counter==19 in the waveforms only at 105_550ns (next clock cycle)
+
+							- 105_450ns, M_AXIS_TREADY is pulled low via BLOCKING ASSIGNMENT
+							- 105_450ns, Since posedge of CLK, we enter this else statement here (note we enter immediately since before was BA)
+							- 105_450ns, $display shows write_counter is 5 (note $display is in Active Queue)
+							- 105_450ns, $strobe shows write_counter is 19 (note $strobe displays value at END of timestep), and is in postponed queue
+								- Thus, we first evaluate RHS of NBA (e.g evaluate 19)
+								- Then, we update LHS of NBA (after all active events are done)
+								- Then, before we move to next time delta, we display it using $strobe
+
+							- TLDR, we should have pulled M_AXIS_TREADY low using a NON-BLOCKING ASSIGNMENT
+								- Verilog waveforms also display the $strobe value for the current time-delta
+						*/
+						//$display("M_AXIS_TREADY LOW, %0t", $time);
+						//$display("DISP write_counter = %0h", write_counter);
+						//$strobe("STROBE write_counter = %0h", write_counter);
+						//write_counter <= 19;
+
+						// Prevent synthesis mismatch with behavioural
+						// Synthesis will somehow jump an address value (e.g. going from 3 to 5 straightaway)
+						//if (is_deasserted) begin
+							//write_counter = write_counter_prev+1;
+							//RES_read_en <= 0;
+							//M_AXIS_TVALID <= 0;
+							//is_deasserted <= 0;
+							//write_counter <= 4;
+						//end
+						RES_read_address <= write_counter+1;
+						RES_read_en <= 0;
+						//M_AXIS_TVALID <= 0;
+
+						//$display("DISP is_deasserted set to 0, %0h %0t", is_deasserted, $time);
+						//$strobe("STROB is_deasserted set to 0, %0h %0t", is_deasserted, $time);
+						is_deasserted <= 0;
 					end
 				end
 			endcase
