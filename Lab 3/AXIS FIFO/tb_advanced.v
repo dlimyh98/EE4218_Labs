@@ -73,11 +73,9 @@ module tb_advanced(
         S_AXIS_TVALID = 1'b1;
         $display("Set S_AXIS_TVALID1 %0t", $time);
 
-        
-        //#200 S_AXIS_TVALID = 1'b0;    // In 2 clock cycles, deassert S_AXIS_TVALID
-        //#175 S_AXIS_TVALID = 1'b0;    // In 2 clock cycles, deassert S_AXIS_TVALID
+        #200 S_AXIS_TVALID = 1'b0;    // In 2 clock cycles, deassert S_AXIS_TVALID
 
-        //#100 S_AXIS_TVALID = 1'b1;    // In 1 more clock cycle, assert back S_AXIS_TVALID
+        #100 S_AXIS_TVALID = 1'b1;    // In 1 more clock cycle, assert back S_AXIS_TVALID
         $display("Set S_AXIS_TVALID2 %0t", $time);
     end
 

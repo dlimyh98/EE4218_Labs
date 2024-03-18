@@ -151,6 +151,10 @@ module myip_v1_0
 						// SLAVE: Only ready to accept data when signalled by MASTER
 						// Note : This is not really how AXIS works (SLAVE can be ready without indication from MASTER)
 						state       	<= Read_Inputs;
+
+
+						// Need to raise S_AXIS_TREADY before entering Read_Inputs
+						// Otherwise, Coprocessor (Slave) will have first value as XX, as it immediately reads from Coprocessor when it is not ready (under Read_Inputs)
 						S_AXIS_TREADY 	<= 1;    // SLAVE->MASTER: Indication from SLAVE to MASTER that SLAVE is accepting data
 					end
 				end
