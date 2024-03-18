@@ -76,14 +76,14 @@ module myip_v1_0
 	
 // wires (or regs) to connect to RAMs and matrix_multiply_0 for assignment 1
 // those which are assigned in an always block of myip_v1_0 shoud be changes to reg.
-	reg  	A_write_en;								// myip_v1_0 -> A_RAM. To be assigned within myip_v1_0. Possibly reg.
+	reg  	A_write_en = 0;								// myip_v1_0 -> A_RAM. To be assigned within myip_v1_0. Possibly reg.
 	reg	[A_depth_bits-1:0] A_write_address;		    // myip_v1_0 -> A_RAM. To be assigned within myip_v1_0. Possibly reg. 
 	reg	[width-1:0] A_write_data_in;			    // myip_v1_0 -> A_RAM. To be assigned within myip_v1_0. Possibly reg.
 	wire	A_read_en;								// matrix_multiply_0 -> A_RAM.
 	wire	[A_depth_bits-1:0] A_read_address;		// matrix_multiply_0 -> A_RAM.
 	wire	[width-1:0] A_read_data_out;			// A_RAM -> matrix_multiply_0.
 
-	reg	B_write_en;								    // myip_v1_0 -> B_RAM. To be assigned within myip_v1_0. Possibly reg.
+	reg	B_write_en = 0;								    // myip_v1_0 -> B_RAM. To be assigned within myip_v1_0. Possibly reg.
 	reg	[B_depth_bits-1:0] B_write_address;		    // myip_v1_0 -> B_RAM. To be assigned within myip_v1_0. Possibly reg.
 	reg	[width-1:0] B_write_data_in;			    // myip_v1_0 -> B_RAM. To be assigned within myip_v1_0. Possibly reg.
 	wire	B_read_en;								// matrix_multiply_0 -> B_RAM.
@@ -160,8 +160,17 @@ module myip_v1_0
 				begin
 					Matrix_Start <= 0;
 
+					// S_AXIS_TVALID comes from testbench (acting as Master)
 					if (S_AXIS_TVALID == 1) begin    // Transaction only occurs if TREADY & TVALID are asserted simultaneously
-						S_AXIS_TREADY <= 1;
+						// If Master is placing valid data, then coprocessor (acting as Slave) will be ready to accept
+						// Note that this is not AXI specification, Slave can assert S_AXIS_TREADY at anytime
+
+						S_AXIS_TREADY 	<= 1;    // SLAVE->MASTER: Indication from SLAVE to MASTER that SLAVE is accepting data
+						$display("S_TVALID and S_TREADY simult, %0t", $time);
+						// Intuitively, all below code is like (S_AXIS_TVALID && S_AXIS_TREADY) of conventional AXI transfer
+
+						// Slave (Coprocessor) should CAPTURE data if S_AXIS_TVALID and S_AXIS_TREADY is both true
+						// Note: Capturing data and writing data to RAM is not the same 'transaction'
 
 						// Read and store values into RAM (RAM_A & RAM_B) first
 						if (read_counter < NUMBER_OF_A_WORDS) begin
@@ -182,8 +191,10 @@ module myip_v1_0
 						read_counter <= read_counter + 1;
 					end
 					else begin
-						// S_AXIS_TVALID is deasserted
+						// S_AXIS_TVALID is deasserted by testbench (acting as Master)
+
 						// Slave should not be accepting data. Testbench will stop setting and sending S_AXIS_TDATA
+						// No need to disable X_write_en, the one to watch out for is X_write_address
 						S_AXIS_TREADY <= 0;
 					end
 
@@ -255,7 +266,7 @@ module myip_v1_0
 				// Contents of RES RAM to be sent out through M_AXIS_TDATA (We must read RAM synchronously!)
 				Write_Outputs:
 				begin
-					//$display("Entered write_outputs, %0t", $time);
+					// M_AXIS_TREADY comes from testbench (as Slave)
 					if (M_AXIS_TREADY == 1) begin    // SLAVE->MASTER: Slave is ready to accept data
 						/*
 						 - MASTER->SLAVE: Master is sending valid data from 2nd cycle onwards (since we need to wait for RES RAM)

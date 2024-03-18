@@ -49,6 +49,7 @@ module tb_advanced(
     integer test_case_cnt;
 	reg success = 1'b1;
 	reg M_AXIS_TLAST_prev = 1'b0;
+
 	
 	always @ (posedge ACLK) begin
 		M_AXIS_TLAST_prev <= M_AXIS_TLAST;
@@ -67,14 +68,17 @@ module tb_advanced(
                                     // For our implementation, Slave asserts TREADY when it Slave gets TVALID==1 from Master
                                     // Note : This is not really how AXIS works (Slave can be ready without indication from Master)
 
-        #150
+        //#125    // Pulled up on clock edge (FAILS)
+        #150  // Pulled up off-cycle
         S_AXIS_TVALID = 1'b1;
+        $display("Set S_AXIS_TVALID1 %0t", $time);
 
-        #200 S_AXIS_TVALID = 1'b0;    // In 2 clock cycles, deassert S_AXIS_TVALID
-        #300 S_AXIS_TVALID = 1'b1;    // In 3 clock cycles, assert back S_AXIS_TVALID
+        
+        //#200 S_AXIS_TVALID = 1'b0;    // In 2 clock cycles, deassert S_AXIS_TVALID
+        //#175 S_AXIS_TVALID = 1'b0;    // In 2 clock cycles, deassert S_AXIS_TVALID
 
-        #2000 S_AXIS_TVALID = 1'b0;
-        #600 S_AXIS_TVALID = 1'b1;
+        //#100 S_AXIS_TVALID = 1'b1;    // In 1 more clock cycle, assert back S_AXIS_TVALID
+        $display("Set S_AXIS_TVALID2 %0t", $time);
     end
 
     /********************** COPROCESSOR AS MASTER, TESTBENCH AS SLAVE **********************/
@@ -82,9 +86,21 @@ module tb_advanced(
         #25                       // Just as main driver pulls reset to low
         M_AXIS_TREADY = 1'b0;	  // Not ready to receive data from the co-processor yet.   
 
-        // At 53225ns, M_AXIS_TREADY is pulled high in main driver (hardcoded by looking at sim waveform)
-        #53400 M_AXIS_TREADY = 1'b0;
-        #300 M_AXIS_TREADY = 1'b1;
+        // At 53225ns, M_AXIS_TREADY is pulled high in main driver.
+        // Doesn't mean coprocessor is ready to send (i.e assert M_AXIS_TVALID), since it still has to do Compute
+
+        // Coprocessor enters Write_Output at 104_150ns
+        // Coprocessor raises M_AXIS_TVALID at 2 clock cycles later (104_350), as need to fill pipeline first
+        #104325
+
+        #400  // Pulldown CLK's posedge
+        //#105495  // Pulldown CLK's negedge
+        //$display("M_AXIS_TREADY PULL-LOW, %0t", $time);
+        M_AXIS_TREADY = 1'b0;
+
+        // Note it can be pulled back up arbitarily (does not need to align on clock edge)
+        //#325 M_AXIS_TREADY = 1'b1;    // pulled back up on CLK's negedge
+        #300 M_AXIS_TREADY = 1'b1;  // pulled back up on CLK's posedge
     end
 
 
@@ -102,12 +118,15 @@ module tb_advanced(
         for (test_case_cnt=0; test_case_cnt < NUMBER_OF_TEST_VECTORS; test_case_cnt=test_case_cnt+1) begin
             /******************************** COPROCESSOR AS SLAVE, RECEIVE ********************************/
             while (word_cnt < NUMBER_OF_INPUT_WORDS) begin
-                // - Master can send data to slave even if slave is not ready (S_AXIS_TREADY not asserted)
-                // - However, Master still needs to check if slave has received the previous data, before sending something new
-                // - Therefore, instead of repeatedly sending the same data and checking if slave has received it before sending
-                //   something new, we just check S_AXIS_TREADY
+                // - AXI implementation is that, Master can send data to slave even if slave is not ready (S_AXIS_TREADY not asserted)
+                // - Master (Testbench) is NOT obliged to send data just because S_AXIS_TREADY is asserted by Slave
+                // - Master just needs to raise S_AXIS_TVALID
 
-                // S_AXIS_TVALID was set by Coprocessor-as-slave driver
+                // - However for our implementation, Slave asserts ready (S_AXIS_TREADY) when Master (Testbench) asserts ready (S_AXIS_TVALID)
+                // - Then, Master (Testbench) only ACTUALLY sends data when Slave is ready
+                // - Thus, Master does not need to check if Slave actually received the data (it is guaranteed)
+
+                // S_AXIS_TVALID was set by driver above (ie Testbench is MASTER, setting S_AXIS_TVALID)
                 // S_AXIS_TREADY is asserted by the coprocessor in response to S_AXIS_TVALID
                 if (S_AXIS_TREADY) begin
                     S_AXIS_TDATA = test_input_memory[word_cnt+test_case_cnt*NUMBER_OF_INPUT_WORDS]; 
@@ -119,30 +138,39 @@ module tb_advanced(
                 #100;			
             end
 
-            // Coprocessor has captured all data, but it doesn't mean that it has written it to RAM yet
+            // Coprocessor(slave) has captured all data, but it doesn't mean that it has written it to RAM yet
             S_AXIS_TVALID = 1'b0;	// Incoming data to coprocessor is no longer valid
             S_AXIS_TLAST = 1'b0;    // Deassert the TLAST pulse
 
             /******************************** COPROCESSOR AS MASTER, SENDING ********************************/
             // Note: result_memory is not written at a clock edge, which is fine as it is just a testbench construct and not actual hardware
             word_cnt = 0;
-            M_AXIS_TREADY = 1'b1;	// Testbench is ready to receive data
+            M_AXIS_TREADY = 1'b1;	// Testbench (slave) is ready to receive data
 
-            while(M_AXIS_TLAST | ~M_AXIS_TLAST_prev) begin    // Testbench receives data until the falling edge of M_AXIS_TLAST
-                if(M_AXIS_TVALID) begin
+            // Testbench 'ready' to receive data until falling edge of M_AXIS_TLAST
+            // But we need to furthur check that M_AXIS_TREADY & M_AXIS_TVALID are simultaneously asserted together also
+            // Note M_AXIS_TVALID is set by coprocessor (master) in response to M_AXIS_TREADY
+            while(M_AXIS_TLAST | ~M_AXIS_TLAST_prev) begin
+                if(M_AXIS_TVALID && M_AXIS_TREADY) begin
                     result_memory[word_cnt+test_case_cnt*NUMBER_OF_OUTPUT_WORDS] = M_AXIS_TDATA;
                     word_cnt = word_cnt+1;
                 end
                 #100;
-            end						
+            end
 
             M_AXIS_TREADY = 1'b0;	// Testbench not ready to receive data
         end							
 
 
         // Checking correctness of results
-        for(word_cnt=0; word_cnt < NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS; word_cnt=word_cnt+1)
+        for(word_cnt=0; word_cnt < NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS; word_cnt=word_cnt+1) begin
                 success = success & (result_memory[word_cnt] == test_result_expected_memory[word_cnt]);
+
+                if (success != 1) begin
+                    $display("Expected %0h got %0h, %0d", test_result_expected_memory[word_cnt], result_memory[word_cnt], word_cnt);
+                end
+        end
+
         if(success)
             $display("Test Passed.");
         else
