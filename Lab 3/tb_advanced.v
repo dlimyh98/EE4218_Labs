@@ -61,28 +61,25 @@ module tb_advanced(
     /********************** COPROCESSOR AS SLAVE, TESTBENCH AS MASTER **********************/
     initial begin
         #25                       // Just as main driver pulls reset to low
-        S_AXIS_TVALID = 1'b0;     // MASTER->SLAVE: no valid data placed on the S_AXIS_TDATA yet
-        S_AXIS_TLAST = 1'b0; 	  // MASTER->SLAVE: not required unless we are dealing with an unknown number of inputs. 
+        S_AXIS_TVALID <= 1'b0;    // MASTER->SLAVE: no valid data placed on the S_AXIS_TDATA yet
+        S_AXIS_TLAST <= 1'b0; 	  // MASTER->SLAVE: not required unless we are dealing with an unknown number of inputs. 
                                     // Ignored by the coprocessor. We will be asserting it correctly anyway
-        // S_AXIS_TREADY = 1'b0;  // SLAVE->MASTER: Slave is not ready to accept data yet
+        //S_AXIS_TREADY <= 1'b0;  // SLAVE->MASTER: Slave is not ready to accept data yet
                                     // For our implementation, Slave asserts TREADY when it Slave gets TVALID==1 from Master
                                     // Note : This is not really how AXIS works (Slave can be ready without indication from Master)
 
-        //#125    // Pulled up on clock edge (FAILS)
-        #150  // Pulled up off-cycle
-        S_AXIS_TVALID = 1'b1;
-        $display("Set S_AXIS_TVALID1 %0t", $time);
+        #125    // Pulled up on clock edge (FAILS)
+        //#150  // Pulled up off-cycle
+        S_AXIS_TVALID <= 1'b1;
 
-        #200 S_AXIS_TVALID = 1'b0;    // In 2 clock cycles, deassert S_AXIS_TVALID
-
-        #100 S_AXIS_TVALID = 1'b1;    // In 1 more clock cycle, assert back S_AXIS_TVALID
-        $display("Set S_AXIS_TVALID2 %0t", $time);
+        #200 S_AXIS_TVALID <= 1'b0;    // In 2 clock cycles, deassert S_AXIS_TVALID
+        #100 S_AXIS_TVALID <= 1'b1;    // In 1 more clock cycle, assert back S_AXIS_TVALID
     end
 
     /********************** COPROCESSOR AS MASTER, TESTBENCH AS SLAVE **********************/
     initial begin
         #25                       // Just as main driver pulls reset to low
-        M_AXIS_TREADY = 1'b0;	  // Not ready to receive data from the co-processor yet.   
+        M_AXIS_TREADY <= 1'b0;	  // Not ready to receive data from the co-processor yet.   
 
         // At 53225ns, M_AXIS_TREADY is pulled high in main driver.
         // Doesn't mean coprocessor is ready to send (i.e assert M_AXIS_TVALID), since it still has to do Compute
@@ -94,11 +91,11 @@ module tb_advanced(
         #400  // Pulldown CLK's posedge
         //#105495  // Pulldown CLK's negedge
         //$display("M_AXIS_TREADY PULL-LOW, %0t", $time);
-        M_AXIS_TREADY = 1'b0;
+        M_AXIS_TREADY <= 1'b0;
 
         // Note it can be pulled back up arbitarily (does not need to align on clock edge)
         //#325 M_AXIS_TREADY = 1'b1;    // pulled back up on CLK's negedge
-        #300 M_AXIS_TREADY = 1'b1;  // pulled back up on CLK's posedge
+        #100 M_AXIS_TREADY <= 1'b1;  // pulled back up on CLK's posedge
     end
 
 
@@ -126,9 +123,12 @@ module tb_advanced(
 
                 // S_AXIS_TVALID was set by driver above (ie Testbench is MASTER, setting S_AXIS_TVALID)
                 // S_AXIS_TREADY is asserted by the coprocessor in response to S_AXIS_TVALID
-                if (S_AXIS_TREADY) begin
-                    S_AXIS_TDATA = test_input_memory[word_cnt+test_case_cnt*NUMBER_OF_INPUT_WORDS]; 
-                    S_AXIS_TLAST = (word_cnt == NUMBER_OF_INPUT_WORDS-1) ? 1'b1 : 1'b0;
+
+                // This is in accordance with AXI specs; even if ONLY TVALID is asserted it does not mean TDATA will just keep iterating and sending
+                // It must wait for TVALID and TREADY to be asserted together, then TDATA will iterate and send
+                if (S_AXIS_TVALID && S_AXIS_TREADY) begin
+                    S_AXIS_TDATA <= test_input_memory[word_cnt+test_case_cnt*NUMBER_OF_INPUT_WORDS]; 
+                    S_AXIS_TLAST <= (word_cnt == NUMBER_OF_INPUT_WORDS-1) ? 1'b1 : 1'b0;
                     word_cnt = word_cnt + 1;
                 end
 
@@ -137,26 +137,28 @@ module tb_advanced(
             end
 
             // Coprocessor(slave) has captured all data, but it doesn't mean that it has written it to RAM yet
-            S_AXIS_TVALID = 1'b0;	// Incoming data to coprocessor is no longer valid
-            S_AXIS_TLAST = 1'b0;    // Deassert the TLAST pulse
+            S_AXIS_TVALID <= 1'b0;	// Incoming data to coprocessor is no longer valid
+            S_AXIS_TLAST <= 1'b0;    // Deassert the TLAST pulse
 
             /******************************** COPROCESSOR AS MASTER, SENDING ********************************/
             // Note: result_memory is not written at a clock edge, which is fine as it is just a testbench construct and not actual hardware
             word_cnt = 0;
-            M_AXIS_TREADY = 1'b1;	// Testbench (slave) is ready to receive data
+            M_AXIS_TREADY <= 1'b1;	// Testbench (slave) is ready to receive data
 
             // Testbench 'ready' to receive data until falling edge of M_AXIS_TLAST
-            // But we need to furthur check that M_AXIS_TREADY & M_AXIS_TVALID are simultaneously asserted together also
-            // Note M_AXIS_TVALID is set by coprocessor (master) in response to M_AXIS_TREADY
+            // Note M_AXIS_TVALID is set by Coprocessor (master) in response to M_AXIS_TREADY from Testbench (slave)
+
+            // Furthur check that M_AXIS_TREADY & M_AXIS_TVALID are simultaneously asserted together
+            // This mimics how the actual AXI DMA works on the FPGA
             while(M_AXIS_TLAST | ~M_AXIS_TLAST_prev) begin
                 if(M_AXIS_TVALID && M_AXIS_TREADY) begin
-                    result_memory[word_cnt+test_case_cnt*NUMBER_OF_OUTPUT_WORDS] = M_AXIS_TDATA;
+                    result_memory[word_cnt+test_case_cnt*NUMBER_OF_OUTPUT_WORDS] <= M_AXIS_TDATA;
                     word_cnt = word_cnt+1;
                 end
                 #100;
             end
 
-            M_AXIS_TREADY = 1'b0;	// Testbench not ready to receive data
+            M_AXIS_TREADY <= 1'b0;	// Testbench not ready to receive data
         end							
 
 
