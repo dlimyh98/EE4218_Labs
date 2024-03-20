@@ -112,16 +112,31 @@ int main()
 			S_AXIS.write(write_input); // Insert one word into the stream
 		}
 
+		write_input.last = 0;
+
 		/************************ CALL OUR HLS-SYNTHESIZED CO-PROCESSOR **************************/
 		myip_v1_0_HLS(S_AXIS, M_AXIS);
 
 		/************************ RECEIVE DATA FROM CO-PROCESSOR **************************/
 		printf("RX data, test case %d ... \r\n", test_case_cnt);
+		bool is_last = false;
+		int word_cnt = 0;
 
+		// Mimic how AXI DMA will look for TLAST
+		do {
+			read_output = M_AXIS.read();	// Extract one word from stream
+			is_last = read_output.last;
+			result_memory[word_cnt+test_case_cnt*NUMBER_OF_OUTPUT_WORDS] = read_output.data;
+			word_cnt++;
+		} while (is_last == false);
+
+		/*
+		read_output = M_AXIS.read();	// Extract one word from stream
 		for (int word_cnt=0 ; word_cnt < NUMBER_OF_OUTPUT_WORDS ; word_cnt++){
 			read_output = M_AXIS.read();    // Extract one word from the stream
 			result_memory[word_cnt+test_case_cnt*NUMBER_OF_OUTPUT_WORDS] = read_output.data;
 		}
+		*/
 	}
 
 

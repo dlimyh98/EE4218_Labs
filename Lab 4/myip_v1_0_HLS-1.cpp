@@ -79,4 +79,7 @@ void myip_v1_0_HLS(hls::stream<AXIS_wLAST>& S_AXIS, hls::stream<AXIS_wLAST>& M_A
 		// write() inserts it into the stream. Overloaded operator << can also be used.
 		M_AXIS.write(write_output);
 	}
+
+	// De-pulse M_TLAST
+	write_output.last = 0;
 }
