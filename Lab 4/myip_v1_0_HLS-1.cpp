@@ -11,6 +11,7 @@
 
 // ACLK, ARESETN, TREADY, TDATA, TVALID are essential signals for AXIS.
 // TLAST is a sideband signal which is optional in AXIS.
+// Rest of the AXI signals are automatically handled by HLS tool.
 // However, it is necessary for us since we connecting M_AXIS to AXI Stream FIFO / AXI DMA.
 
 // Declare an AXI-4 Stream interface (without side-channels)
@@ -19,7 +20,7 @@ typedef ap_axis<32,0,0,0> AXIS_wLAST;
 // https://docs.amd.com/r/en-US/ug1399-vitis-hls/Interfaces-for-Vitis-Kernel-Flow
 // https://docs.amd.com/r/en-US/ug1399-vitis-hls/AXI4-Stream-Interfaces
 // Since we are using AXI-4 Stream interface protocol, the argument is hls::stream (Paradigm is Stream)
-void myip_v1_0_HLS(hls::stream<AXIS_wLAST>& S_AXIS, hls::stream<AXIS_wLAST>& M_AXIS){
+void myip_v1_0_HLS(hls::stream<AXIS_wLAST>& S_AXIS, hls::stream<AXIS_wLAST>& M_AXIS) {
 
 	// https://docs.amd.com/r/en-US/ug1399-vitis-hls/Introduction-to-Interface-Synthesis
 	#pragma HLS INTERFACE ap_ctrl_none port=return  // https://docs.amd.com/r/2022.1-English/ug1399-vitis-hls/Using-ap_ctrl_none-Inside-the-Dataflow
