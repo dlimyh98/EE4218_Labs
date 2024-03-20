@@ -12,16 +12,24 @@
 #include "xil_printf.h"
 #include "stdio.h"
 
+// Timer
+#include "xtmrctr.h"
+
 /***************************** Interrupt or Polling? *********************************/
-//#define POLLING_MODE
+//#define RX_TX_POLLING_MODE
 
 /***************** Macros *********************/
-#define FIFO_DEV_ID     XPAR_AXI_FIFO_0_DEVICE_ID        // AXI_FIFO_MM_S_0 peripheral
+#define FIFO_DEV_ID             XPAR_AXI_FIFO_0_DEVICE_ID      // AXI_FIFO_MM_S_0 peripheral
 
-#define INTC_DEVICE_ID  XPAR_SCUGIC_SINGLE_DEVICE_ID     // SCUGIC
-#define FIFO_INTR_ID    XPAR_FABRIC_LLFIFO_0_VEC_ID      // AXI_FIFO_MM_S_0 fabric interrupt
+#define TMRCTR_DEVICE_ID        XPAR_TMRCTR_0_DEVICE_ID
+#define TIMER_CNTR_0            0
 
-#define INTERRUPT_PRIORITY      160
+#define INTC_DEVICE_ID          XPAR_SCUGIC_SINGLE_DEVICE_ID   // SCUGIC
+#define FIFO_INTR_ID            XPAR_FABRIC_LLFIFO_0_VEC_ID    // AXI_FIFO_MM_S_0 fabric interrupt
+#define TMRCTR_INTERRUPT_ID     XPAR_FABRIC_TMRCTR_0_VEC_ID    // AXI-Timer Interrupt
+
+#define FIFO_INTERRUPT_PRIORITY      160
+#define AXI_TIMER_INTERRUPT_PRIORITY 240
 #define RISING_EDGE_SENSIIVE    3
 #define NUM_RX_PACKETS_EXPECTED 1
 
@@ -35,7 +43,6 @@
 #define B_NUM_COLS 1
 #define TIMEOUT_VALUE 1<<20
 
-// UART
 #define UART_DEVICE_ID  XPAR_XUARTPS_0_DEVICE_ID
 #define UART_BASEADDR   XPAR_XUARTPS_0_BASEADDR
 #define MY_BAUD_RATE    115200  // Realterm must match this
@@ -48,11 +55,14 @@
 #define HUNDREDS    2
 
 /************************** Variable Definitions *****************************/
-u16 DeviceId = FIFO_DEV_ID;
-XLlFifo FifoInstance; 	                // Device instance
-XLlFifo* InstancePtr = &FifoInstance;   // Device pointer
+u16 FIFODeviceId = FIFO_DEV_ID;
+XLlFifo FifoInstance; 	                    // AXIS-FIFO device instance
+XLlFifo* FifoInstancePtr = &FifoInstance; 
 
-static XScuGic IntC;                    // Interrupt Controller instance
+XTmrCtr TimerCounterInst;                   // AXI-Timer device instance
+XTmrCtr* TimerCtrInstancePtr = &TimerCounterInst;
+
+static XScuGic IntC;                        // Interrupt Controller instance
 volatile int TX_done = 0;
 volatile int packets_received = 0;
 
@@ -134,14 +144,22 @@ int result_memory [NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS];
 int test_result_expected_memory [NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS];
 
 /************************** Function Definitions *****************************/
-int initialize_AXIS_interrupts();
-static void AXIS_interrupt_handler();
+int initialization();
+void set_expected_memory();
+int verify();
+
+// AXI-FIFO
+int init_base_FIFO_system();
 int AXIS_transmit();
 int AXIS_receive();
 
-int init_base_FIFO_system();
-void set_expected_memory();
-int verify();
+// AXI-Timer
+int init_axi_timer();
+
+// Interrupts
+int init_interrupts();
+static void AXIS_interrupt_handler();
+void AXI_Timer_interrupt_handler();
 
 // UART
 int init_UART(XUartPs* Uart_Ps);
@@ -159,40 +177,19 @@ u8 find_place(u8 loop_iteration);
 ******************************************************************************/
 int main()
 {
-    // Init
-	set_expected_memory();
-
-    if (init_UART(&Uart_Ps) == XST_FAILURE) {
-        xil_printf("Failed UART initialization\n");
-        return XST_FAILURE;
-    }
-    override_uart_configs(&Uart_Ps);
-
-
-    if (init_base_FIFO_system() == XST_FAILURE) {
-        xil_printf("Failed base FIFO initialization\n");
+    if (initialization() != XST_SUCCESS) {
+        xil_printf("Initialization failure\n");
         return XST_FAILURE;
     }
 
-    #ifndef POLLING_MODE
-        if (initialize_AXIS_interrupts() != XST_SUCCESS) {
-            xil_printf("Failed interrupt initialization\n");
-            return XST_FAILURE;
-        } else {
-            // Enable AXIS_FIFO with choice of interrupts
-            XLlFifo_IntEnable(InstancePtr, XLLF_INT_TC_MASK|XLLF_INT_RC_MASK);
-        }
-    #endif
-
-    // UART
+    // Accept files from UART, do SW processing
     xil_printf("Ready to accept files from Realterm\n");
     receive_from_realterm(UART_BASEADDR, recv_a_matrix, recv_b_matrix);
 
     xil_printf("Do SW processing\n");
     do_processing(recv_a_matrix, recv_b_matrix, test_result_expected_memory);
 
-
-    // AXIS
+    // Communicate to Coprocessor IP via AXI-Stream
 	for (; test_case_cnt < NUMBER_OF_TEST_VECTORS; test_case_cnt++) {
         /********************* TX *********************/
         if (AXIS_transmit() != XST_SUCCESS) {
@@ -201,7 +198,7 @@ int main()
         }
 
         // Interrupt mode: Do other work while waiting for TX completion
-        #ifndef POLLING_MODE
+        #ifndef RX_TX_POLLING_MODE
             while (!TX_done) {
                 xil_printf("Busy TX\n");
             }
@@ -216,27 +213,67 @@ int main()
         }
 	}
 
-    if (verify() != XST_SUCCESS) {
-        xil_printf("Verification fail\n");
+    // Verify results
+    return (verify());
+}
+
+
+/*********************************** FUNCTION DEFINITIONS *********************************************/
+int initialization() {
+    set_expected_memory();
+
+    if (init_UART(&Uart_Ps) == XST_FAILURE) {
+        xil_printf("Failed UART initialization\n");
         return XST_FAILURE;
     }
-    else {
-        xil_printf("Verification success\n");
-        return XST_SUCCESS;
+    override_uart_configs(&Uart_Ps);
+
+    if (init_base_FIFO_system() == XST_FAILURE) {
+        xil_printf("Failed base FIFO initialization\n");
+        return XST_FAILURE;
     }
 
+    if (init_axi_timer() == XST_FAILURE) {
+        xil_printf("Failed AXI timer initialization\n");
+        return XST_FAILURE;
+    }
+
+    #ifndef RX_TX_POLLING_MODE
+        if (init_interrupts() != XST_SUCCESS) {
+            xil_printf("Failed interrupt initialization\n");
+            return XST_FAILURE;
+        } else {
+            // Enable AXIS_FIFO with choice of interrupts
+            XLlFifo_IntEnable(FifoInstancePtr, XLLF_INT_TC_MASK|XLLF_INT_RC_MASK);
+        }
+    #endif
+
+    return XST_SUCCESS;
+}
+
+
+int init_axi_timer() {
+    // NOTE: Only Timer0 is enabled in Vivado block diagram
+    int status;
+
+    // Baseline initialization of AXI-Timer
+    status = XTmrCtr_Initialize(TimerCtrInstancePtr, TMRCTR_DEVICE_ID);
+    if (status != XST_SUCCESS) {
+        xil_printf("Error in baseline initialization of AXI-Timer\n");
+        return status;
+    }
 }
 
 
 static void AXIS_interrupt_handler() {
     // Check which interrupt source was triggered
-    u32 Pending = XLlFifo_IntPending(InstancePtr);
+    u32 Pending = XLlFifo_IntPending(FifoInstancePtr);
 
     // Clear ALL interrupts (there may be back-to-back interrupts)
     while (Pending) {
         if (Pending & XLLF_INT_TC_MASK) {
             TX_done = 1;
-            XLlFifo_IntClear(InstancePtr, XLLF_INT_TC_MASK);
+            XLlFifo_IntClear(FifoInstancePtr, XLLF_INT_TC_MASK);
         }
         else if (Pending & XLLF_INT_RC_MASK) {
             xil_printf("ISR's RC triggered\n");
@@ -252,33 +289,38 @@ static void AXIS_interrupt_handler() {
             // It tells is the number of locations in use for data storage in the FIFO's RX, after the most recent transaction
             // Note this value is only updated after a packet is SUCCESSFULLY received
             // Reads from RDRO register, https://docs.xilinx.com/r/en-US/pg080-axi-fifo-mm-s/Interrupt-Status-Register-ISR
-
-            while (XLlFifo_iRxOccupancy(InstancePtr)) {
+            while (XLlFifo_iRxOccupancy(FifoInstancePtr)) {
                 // We are expecting only one packet from testbench per testcase
-                u32 received_length = XLlFifo_iRxGetLen(InstancePtr);
+                u32 received_length = XLlFifo_iRxGetLen(FifoInstancePtr);
 
                 for (int word_cnt=0; word_cnt < received_length/WORD_SIZE_IN_BYTES; word_cnt++) {
-                        u32 RxWord = XLlFifo_RxGetWord(InstancePtr);
+                        u32 RxWord = XLlFifo_RxGetWord(FifoInstancePtr);
                         result_memory[word_cnt+test_case_cnt*NUMBER_OF_OUTPUT_WORDS] = RxWord;
                 }
             }
 
             packets_received++;
-            XLlFifo_IntClear(InstancePtr, XLLF_INT_RC_MASK);
+            XLlFifo_IntClear(FifoInstancePtr, XLLF_INT_RC_MASK);
         }
         else {
             // Shouldn't come here actually
-            XLlFifo_IntClear(InstancePtr, Pending);
+            XLlFifo_IntClear(FifoInstancePtr, Pending);
         }
 
         // Check if any other queued interrupts
-		Pending = XLlFifo_IntPending(InstancePtr);
+		Pending = XLlFifo_IntPending(FifoInstancePtr);
     }
 }
 
 
+void AXI_Timer_interrupt_handler() {
+    //TODO: Line 488 in example
+    xil_printf("Pass\n");
+}
+
+
 int AXIS_receive() {
-    #ifdef POLLING_MODE
+    #ifdef RX_TX_POLLING_MODE
         /******************** Output from Coprocessor : Receive the Data Stream ***********************/
         xil_printf(" Receiving data for test case %d ... \r\n", test_case_cnt);
 
@@ -287,7 +329,7 @@ int AXIS_receive() {
         // It tells is the number of locations in use for data storage in the FIFO's RX, after the most recent transaction
         // Note this value is only updated after a packet is SUCCESSFULLY received
         // Reads from RDRO register, https://docs.xilinx.com/r/en-US/pg080-axi-fifo-mm-s/Interrupt-Status-Register-ISR
-        while(!XLlFifo_iRxOccupancy(InstancePtr)) {
+        while(!XLlFifo_iRxOccupancy(FifoInstancePtr)) {
             timeout_count--;
             if (timeout_count == 0)
             {
@@ -302,14 +344,14 @@ int AXIS_receive() {
 
         // If more packets are expected from the coprocessor, the part below should be done in a loop.
         // https://docs.xilinx.com/r/en-US/pg080-axi-fifo-mm-s/Receive-Length-Register-RLR
-        u32 num_bytes_in_packet = XLlFifo_iRxGetLen(InstancePtr);    // Reads from RLR register
+        u32 num_bytes_in_packet = XLlFifo_iRxGetLen(FifoInstancePtr);    // Reads from RLR register
 
         // Read one word at a time
         for (int word_cnt=0; word_cnt < num_bytes_in_packet/4; word_cnt++) {
-            result_memory[word_cnt+test_case_cnt*NUMBER_OF_OUTPUT_WORDS] = XLlFifo_RxGetWord(InstancePtr);
+            result_memory[word_cnt+test_case_cnt*NUMBER_OF_OUTPUT_WORDS] = XLlFifo_RxGetWord(FifoInstancePtr);
         }
 
-        int Status = XLlFifo_IsRxDone(InstancePtr);
+        int Status = XLlFifo_IsRxDone(FifoInstancePtr);
         if(Status != TRUE){
             xil_printf("Failing in receive complete ... \r\n");
             return XST_FAILURE;
@@ -335,20 +377,20 @@ int AXIS_transmit() {
 
     // Writing into the FIFO Transmit Port Buffer
     for (word_cnt=0; word_cnt < NUMBER_OF_INPUT_WORDS; word_cnt++) {
-        if( XLlFifo_iTxVacancy(InstancePtr) ){
+        if( XLlFifo_iTxVacancy(FifoInstancePtr) ){
             // We set AXIS FIFO depth to 1024 (words) in Vivado, so it can comfortably fit NUMBER_OF_INPUT_WORDS
-            XLlFifo_TxPutWord(InstancePtr, test_input_memory[word_cnt+test_case_cnt*NUMBER_OF_INPUT_WORDS]);
+            XLlFifo_TxPutWord(FifoInstancePtr, test_input_memory[word_cnt+test_case_cnt*NUMBER_OF_INPUT_WORDS]);
         }
     }
 
     // Kickoff transmission by declaring transmission length (in bytes)
-    XLlFifo_iTxSetLen(InstancePtr, WORD_SIZE_IN_BYTES*NUMBER_OF_INPUT_WORDS);
+    XLlFifo_iTxSetLen(FifoInstancePtr, WORD_SIZE_IN_BYTES*NUMBER_OF_INPUT_WORDS);
 
-    #ifdef POLLING_MODE
+    #ifdef RX_TX_POLLING_MODE
         // POLLING check for TX completion, by checking the TC flag of ISR register
         // How is this different from Interrupt mode? In Polling, the corresponding IER is NOT asserted
         // Thus we need to keep polling the TC flag
-        while( !(XLlFifo_IsTxDone(InstancePtr)) ) {}
+        while( !(XLlFifo_IsTxDone(FifoInstancePtr)) ) {}
         /* Transmission Complete */
         return XST_SUCCESS;
     #else
@@ -362,21 +404,23 @@ int AXIS_transmit() {
 int verify() {
 	int success = 1;
 
-	/* Compare the data send with the data received */
+	// Compare the data send with the data received
 	xil_printf(" Comparing data ...\r\n");
 	for (int word_cnt=0; word_cnt < NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS; word_cnt++) {
 		success = success & (result_memory[word_cnt] == test_result_expected_memory[word_cnt]);
 	}
 
 	if (success != 1){
+        xil_printf("Verification fail\n");
 		return XST_FAILURE;
 	}
 
+    xil_printf("Verification success\n");
     return XST_SUCCESS;
 }
 
 
-int initialize_AXIS_interrupts() {
+int init_interrupts() {
     /* https://support.xilinx.com/s/article/763748?language=en_US
        1. In the IP block diagram, connect AXI-Stream FIFO's interrupt to Zynq MPSoC pl_ps_irq0[0:0]
             - This interrupt belongs to the MPSoC's APU interrupts, specifically it is Interrupt Group 0
@@ -400,23 +444,40 @@ int initialize_AXIS_interrupts() {
                              IntcConfig->CpuBaseAddress);
    if (Status != XST_SUCCESS) return XST_FAILURE;
 
-   // Sets priority/trigger types for our SPECIFIED IRQ source
-   // I'm assuming FIFO_INTR_ID in this case refers to the IRQ from AXIS-FIFO
-   XScuGic_SetPriorityTriggerType(&IntC, (u16)FIFO_INTR_ID,
-                            INTERRUPT_PRIORITY, RISING_EDGE_SENSIIVE);
+   // Sets priority/trigger types for our specified IRQ sources
+   #ifndef RX_TX_POLLING_MODE
+        XScuGic_SetPriorityTriggerType(&IntC, (u16)FIFO_INTR_ID,
+                                    FIFO_INTERRUPT_PRIORITY, RISING_EDGE_SENSIIVE);
+   #endif
+   XScuGic_SetPriorityTriggerType(&IntC, (u16) TMRCTR_INTERRUPT_ID,
+                            AXI_TIMER_INTERRUPT_PRIORITY, RISING_EDGE_SENSIIVE);
 
-    // Connect our interrupt handler
-	Status = XScuGic_Connect(&IntC, (u16)FIFO_INTR_ID,
-				(Xil_InterruptHandler)AXIS_interrupt_handler, InstancePtr);
-    if (Status != XST_SUCCESS) return Status;
+    // Connect our interrupt handlers
+    #ifndef RX_TX_POLLING_MODE
+        Status = XScuGic_Connect(&IntC, (u16)FIFO_INTR_ID,
+                    (Xil_InterruptHandler)AXIS_interrupt_handler, FifoInstancePtr);
+        if (Status != XST_SUCCESS) {
+            xil_printf("Fail to connect AXIS-FIFO interrupt handler\n");
+            return Status;
+        }
+    #endif
+	Status = XScuGic_Connect(&IntC, (u16)TMRCTR_INTERRUPT_ID,
+				(Xil_InterruptHandler)AXI_Timer_interrupt_handler, TimerCtrInstancePtr);
+    if (Status != XST_SUCCESS) {
+        xil_printf("Fail to connect AXI-Timer interrupt handler\n");
+        return Status;
+    }
 
-    // Enable the interrupt
-    XScuGic_Enable(&IntC, (u16)FIFO_INTR_ID);
+    // Enable interrupts
+    #ifndef RX_TX_POLLING_MODE
+        XScuGic_Enable(&IntC, (u16)FIFO_INTR_ID);
+    #endif
+    XScuGic_Enable(&IntC, (u16)TMRCTR_INTERRUPT_ID);
 
-
-    // Register our interrupt controller handler with exception table
-    // Not sure why we need to do this, but it's in the example code
+    // Initialize the exception table
     Xil_ExceptionInit();
+
+    // Register our interrupt controller handler with the exception table
 	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
 		(Xil_ExceptionHandler)XScuGic_InterruptHandler,
 		(void*)&IntC);
@@ -433,25 +494,25 @@ int init_base_FIFO_system() {
 	XLlFifo_Config *Config;
 
 	/* Initialize the Device Configuration Interface driver */
-	Config = XLlFfio_LookupConfig(DeviceId);
+	Config = XLlFfio_LookupConfig(FIFODeviceId);
 	if (!Config) {
-		xil_printf("No config found for %d\r\n", DeviceId);
+		xil_printf("No config found for %d\r\n", FIFODeviceId);
 		return XST_FAILURE;
 	}
 
-	Status = XLlFifo_CfgInitialize(InstancePtr, Config, Config->BaseAddress);
+	Status = XLlFifo_CfgInitialize(FifoInstancePtr, Config, Config->BaseAddress);
 	if (Status != XST_SUCCESS) {
 		xil_printf("Initialization failed\r\n");
 		return XST_FAILURE;
 	}
 
 	/* Check for the Reset value */
-	Status = XLlFifo_Status(InstancePtr);
-	XLlFifo_IntClear(InstancePtr,0xffffffff);
-	Status = XLlFifo_Status(InstancePtr);
+	Status = XLlFifo_Status(FifoInstancePtr);
+	XLlFifo_IntClear(FifoInstancePtr,0xffffffff);
+	Status = XLlFifo_Status(FifoInstancePtr);
 	if(Status != 0x0) {
 		xil_printf("\n ERROR : Reset value of ISR0 : 0x%x\t. Expected : 0x0\r\n",
-			    XLlFifo_Status(InstancePtr));
+			    XLlFifo_Status(FifoInstancePtr));
 		return XST_FAILURE;
 	}
 
@@ -483,7 +544,6 @@ void set_expected_memory() {
 }
 
 
-/*********************************** FUNCTION DEFINITIONS *********************************************/
 void send_to_realterm(u32 uart_base_address, int* trans_res_matrix) {
     // Additional +1 to accomodate null-termination of strings
     // Note string literals must be char, NOT unsigned char
@@ -553,10 +613,11 @@ void do_processing(char* recv_a_matrix, char* recv_b_matrix, int* trans_res_matr
 }
 
 
-// Data is sent through .csv files via Realterm
-// .csv files MUST be in Unix format (i.e consider line break as 0xA). Can use Vim to set fileformat to Unix.
-// Also note that the file MUST have EOL character. Can use Vim to check also.
 void receive_from_realterm(u32 uart_base_addr, char* recv_a_matrix, char* recv_b_matrix) {
+    // Data is sent through .csv files via Realterm
+    // .csv files MUST be in Unix format (i.e consider line break as 0xA). Can use Vim to set fileformat to Unix.
+    // Also note that the file MUST have EOL character. Can use Vim to check also.
+
     int valid_recv_count = 0;    // Number of elements in our usual Matrix
 
     char buffer[CONCAT_BUFFER_SIZE] = {0};  // Maximal incoming matrix value is '255', formed by 3 chars
@@ -608,10 +669,11 @@ void receive_from_realterm(u32 uart_base_addr, char* recv_a_matrix, char* recv_b
 }
 
 
-// Compress each element of char_buffer into a singular char
-// eg. |2||5||5| ---> 255
-//     [0][1][2]
 char concat_char_buffer(char* buffer_ptr, int tail_index) {
+    // Compress each element of char_buffer into a singular char
+    // eg. |2||5||5| ---> 255
+    //     [0][1][2]
+
     u8 sum = 0;
 
     // Loop through all elements in the array
