@@ -153,6 +153,7 @@ module myip_v1_0
 						// Note : This is not really how AXIS works (SLAVE can be ready without indication from MASTER)
 						state       	<= Read_Inputs;
 
+						// TODO: Below two comments may be outdated...
 						// Need to raise S_AXIS_TREADY before entering Read_Inputs
 						// Otherwise, Coprocessor (Slave) will have first value as XX, as it immediately reads from Coprocessor when it is not ready (under Read_Inputs)
 						S_AXIS_TREADY 	<= 1;    // SLAVE->MASTER: Indication from SLAVE to MASTER that SLAVE is accepting data
@@ -168,31 +169,10 @@ module myip_v1_0
 					if (S_AXIS_TVALID) begin    // Transaction only occurs if TREADY & TVALID are asserted simultaneously
 						// If Master is placing valid data, then coprocessor (acting as Slave) will change to be ready to accept
 						// Note that this is not AXI specification, Slave can assert S_AXIS_TREADY at anytime
-
 						S_AXIS_TREADY 	<= 1;    // SLAVE->MASTER: Indication from SLAVE to MASTER that SLAVE is accepting data
-						/*
-						// Read and store values into RAM (RAM_A & RAM_B) first
-						if (read_counter < NUMBER_OF_A_WORDS) begin
-							// Incoming data belongs to 'A' matrix
-							A_write_en <= 1;
-							A_write_address <= read_counter;
-							A_write_data_in <= S_AXIS_TDATA[width-1:0];
-						end 
-						else begin
-							// Incoming data belongs to 'B' matrix
-							B_write_en <= 1; A_write_en <= 0;
-							B_write_address <= read_counter - NUMBER_OF_A_WORDS;
-							B_write_data_in <= S_AXIS_TDATA[width-1:0];
-						end
-
-						// Still continue filling RAM_A/RAM_B
-						// Note we will keep filling as long as not last element
-						read_counter <= read_counter + 1;
-						*/
 					end
 					else begin
 						// S_AXIS_TVALID is deasserted by testbench (acting as Master)
-
 						// Slave should not be accepting data. Testbench will stop setting and sending S_AXIS_TDATA
 						// No need to disable X_write_en, the one to watch out for is X_write_address
 						S_AXIS_TREADY <= 0;
@@ -329,6 +309,7 @@ module myip_v1_0
 						end
 
 						if (M_AXIS_TLAST == 1) begin
+							is_M_AXIS_pipeline_filling <= 1;
 							state <= Idle;
 							M_AXIS_TLAST <= 0;
 							M_AXIS_TVALID <= 0;

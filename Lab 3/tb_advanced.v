@@ -1,4 +1,3 @@
-
 `timescale 1ns / 1ps
 
 module tb_advanced(
@@ -40,7 +39,7 @@ module tb_advanced(
 	localparam NUMBER_OF_INPUT_WORDS  = NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS;	// Total number of input data.
 	localparam NUMBER_OF_OUTPUT_WORDS = 2**RES_depth_bits;	                    // Total number of output data
 
-	localparam NUMBER_OF_TEST_VECTORS  = 1;  // number of such test vectors (cases)
+	localparam NUMBER_OF_TEST_VECTORS  = 2;  // number of such test vectors (cases)
 	reg [width-1:0] test_input_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_INPUT_WORDS-1];
 	reg [width-1:0] test_result_expected_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS-1];
 	reg [width-1:0] result_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS-1];    // same size as test_result_expected_memory
@@ -74,6 +73,12 @@ module tb_advanced(
 
         #200 S_AXIS_TVALID <= 1'b0;    // In 2 clock cycles, deassert S_AXIS_TVALID
         #100 S_AXIS_TVALID <= 1'b1;    // In 1 more clock cycle, assert back S_AXIS_TVALID
+
+
+        // Second testcase, M_AXIS_TLAST pulsed at 111050ns for 1st testcase
+        #111000 S_AXIS_TVALID <= 1'b1;
+        #200 S_AXIS_TVALID <= 1'b0;
+        #100 S_AXIS_TVALID <= 1'b1;
     end
 
     /********************** COPROCESSOR AS MASTER, TESTBENCH AS SLAVE **********************/
@@ -89,13 +94,15 @@ module tb_advanced(
         #104325
 
         #400  // Pulldown CLK's posedge
-        //#105495  // Pulldown CLK's negedge
-        //$display("M_AXIS_TREADY PULL-LOW, %0t", $time);
         M_AXIS_TREADY <= 1'b0;
 
-        // Note it can be pulled back up arbitarily (does not need to align on clock edge)
-        //#325 M_AXIS_TREADY = 1'b1;    // pulled back up on CLK's negedge
         #100 M_AXIS_TREADY <= 1'b1;  // pulled back up on CLK's posedge
+
+
+        // Second testcase
+        // M_AXIS_TREADY pulled high by Main Driver (163825ns)
+        #400 M_AXIS_TREADY <= 1'b0;
+        #100 M_AXIS_TREADY <= 1'b1;
     end
 
 
@@ -108,9 +115,9 @@ module tb_advanced(
 
         ARESETN = 1'b0; 		// apply reset (active low)
         #100 ARESETN = 1'b1;    // hold reset for 100 ns before releasing
-        word_cnt = 0;
 
         for (test_case_cnt=0; test_case_cnt < NUMBER_OF_TEST_VECTORS; test_case_cnt=test_case_cnt+1) begin
+            word_cnt = 0;
             /******************************** COPROCESSOR AS SLAVE, RECEIVE ********************************/
             while (word_cnt < NUMBER_OF_INPUT_WORDS) begin
                 // - AXI implementation is that, Master can send data to slave even if slave is not ready (S_AXIS_TREADY not asserted)
@@ -155,6 +162,8 @@ module tb_advanced(
                     result_memory[word_cnt+test_case_cnt*NUMBER_OF_OUTPUT_WORDS] <= M_AXIS_TDATA;
                     word_cnt = word_cnt+1;
                 end
+
+                // Wait for coprocessor
                 #100;
             end
 
