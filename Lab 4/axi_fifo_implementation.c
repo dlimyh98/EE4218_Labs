@@ -177,6 +177,9 @@ u8 find_place(u8 loop_iteration);
 ******************************************************************************/
 int main()
 {
+    u32 sw_mult_time = 0;
+    u32 hw_mult_time = 0;
+
     if (initialization() != XST_SUCCESS) {
         xil_printf("Initialization failure\n");
         return XST_FAILURE;
@@ -185,9 +188,16 @@ int main()
     // Accept files from UART, do SW processing
     xil_printf("Ready to accept files from Realterm\n");
     receive_from_realterm(UART_BASEADDR, recv_a_matrix, recv_b_matrix);
-
     xil_printf("Do SW processing\n");
+
+    // 1. Load value in TLR0 to TCR0 (by writing to LOAD0)
+    // 2. Clear LOAD0, set ENT0 (to let counter run)
+    XTmrCtr_Start(TimerCtrInstancePtr, TIMER_CNTR_0);
+
     do_processing(recv_a_matrix, recv_b_matrix, test_result_expected_memory);
+
+    // Read from TCR0
+	sw_mult_time = XTmrCtr_GetValue(TimerCtrInstancePtr, TIMER_CNTR_0);
 
     // Communicate to Coprocessor IP via AXI-Stream
 	for (; test_case_cnt < NUMBER_OF_TEST_VECTORS; test_case_cnt++) {
@@ -200,7 +210,8 @@ int main()
         // Interrupt mode: Do other work while waiting for TX completion
         #ifndef RX_TX_POLLING_MODE
             while (!TX_done) {
-                xil_printf("Busy TX\n");
+                asm("nop");
+                //xil_printf("Busy TX\n");
             }
         #endif
 
@@ -212,6 +223,11 @@ int main()
             return XST_FAILURE;
         }
 	}
+
+	hw_mult_time = XTmrCtr_GetValue(TimerCtrInstancePtr, TIMER_CNTR_0) - sw_mult_time;
+    // TODO: For more accuracy, we can reset Timer0 before counting for HW mult
+    xil_printf("SW mult is %d\n", sw_mult_time);
+    xil_printf("HW mult is %d", hw_mult_time);
 
     // Verify results
     return (verify());
@@ -256,12 +272,21 @@ int init_axi_timer() {
     // NOTE: Only Timer0 is enabled in Vivado block diagram
     int status;
 
-    // Baseline initialization of AXI-Timer
+    // Baseline initialization of AXI-Timer. Namely...
+    // 1. TLR0 (Load Register) set to 0
+    // 2. Timer0 set to GENERATE mode, and up-counting
     status = XTmrCtr_Initialize(TimerCtrInstancePtr, TMRCTR_DEVICE_ID);
     if (status != XST_SUCCESS) {
         xil_printf("Error in baseline initialization of AXI-Timer\n");
         return status;
     }
+
+    // Enable Autoreload mode (ARHT0) of timer counter
+    // GENERATE mode Timer will RELOAD value from Load Register (0) when a carryout occurs
+    // Not really important to us
+	XTmrCtr_SetOptions(TimerCtrInstancePtr, TIMER_CNTR_0, XTC_AUTO_RELOAD_OPTION);
+
+    return XST_SUCCESS;
 }
 
 
@@ -276,7 +301,7 @@ static void AXIS_interrupt_handler() {
             XLlFifo_IntClear(FifoInstancePtr, XLLF_INT_TC_MASK);
         }
         else if (Pending & XLLF_INT_RC_MASK) {
-            xil_printf("ISR's RC triggered\n");
+            //xil_printf("ISR's RC triggered\n");
 
             /* ISR's RC flag is raised
                 - Indicates that at least one successful receive of packet(s) has completed
@@ -314,7 +339,6 @@ static void AXIS_interrupt_handler() {
 
 
 void AXI_Timer_interrupt_handler() {
-    //TODO: Line 488 in example
     xil_printf("Pass\n");
 }
 
@@ -361,7 +385,8 @@ int AXIS_receive() {
         /* Reception Complete */
     #else
         while (packets_received != NUM_RX_PACKETS_EXPECTED) {
-            xil_printf("Busy RX\n");
+            asm("nop");
+            //xil_printf("Busy RX\n");
         }
 
         return XST_SUCCESS;
@@ -373,7 +398,7 @@ int AXIS_transmit() {
     int word_cnt = 0;
 
     /******************** Input to Coprocessor : Transmit the Data Stream ***********************/
-    xil_printf(" Transmitting Data for test case %d ... \r\n", test_case_cnt);
+    //xil_printf(" Transmitting Data for test case %d ... \r\n", test_case_cnt);
 
     // Writing into the FIFO Transmit Port Buffer
     for (word_cnt=0; word_cnt < NUMBER_OF_INPUT_WORDS; word_cnt++) {
@@ -472,7 +497,8 @@ int init_interrupts() {
     #ifndef RX_TX_POLLING_MODE
         XScuGic_Enable(&IntC, (u16)FIFO_INTR_ID);
     #endif
-    XScuGic_Enable(&IntC, (u16)TMRCTR_INTERRUPT_ID);
+    //TODO: TMRCTR Interrupt logic not implemented yet
+    //XScuGic_Enable(&IntC, (u16)TMRCTR_INTERRUPT_ID);
 
     // Initialize the exception table
     Xil_ExceptionInit();
