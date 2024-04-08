@@ -33,6 +33,7 @@ void myip_v1_0_HLS(hls::stream<AXIS_wLAST>& S_AXIS, hls::stream<AXIS_wLAST>& M_A
 	ap_uint<8> recv_a_matrix[A_NUM_ROWS*A_NUM_COLS] = {0};
 	ap_uint<8> recv_b_matrix[B_NUM_ROWS*B_NUM_COLS] = {0};
 	ap_uint<12> trans_res_matrix[A_NUM_ROWS*B_NUM_COLS] = {0};
+    #pragma HLS ARRAY_PARTITION variable=trans_res_matrix dim=1 type=complete
 
 	ap_uint<32> sum = 0;				// (255*255)*(NUM_A_COLS) = 4161600
 
@@ -41,7 +42,7 @@ void myip_v1_0_HLS(hls::stream<AXIS_wLAST>& S_AXIS, hls::stream<AXIS_wLAST>& M_A
 
 	// We are not making using of S_TLAST (from Master) when Coprocessor (Slave) receives Data
 	// S_AXIS_TLAST is required only when we are receiving an unknown number of words.
-	myip_v1_0_HLS_receive:for(int word_cnt = 0; word_cnt < NUMBER_OF_INPUT_WORDS; word_cnt++){
+	myip_v1_0_HLS_receive:for(int word_cnt = 0; word_cnt < NUMBER_OF_INPUT_WORDS; word_cnt++) {
 		// read_input is the element (data + other signals) received by our IP through S_AXIS in one clock cycle (which contains one word).
 		// read() extracts it from the stream. Overloaded operator >> can also be used.
 		read_input = S_AXIS.read();
@@ -57,6 +58,7 @@ void myip_v1_0_HLS(hls::stream<AXIS_wLAST>& S_AXIS, hls::stream<AXIS_wLAST>& M_A
 
 
 	myip_v1_0_HLS_processing_outer:for(int i = 0; i < A_NUM_ROWS; i++) {
+        #pragma HLS unroll
 		sum = 0;
 
 		myip_v1_0_HLS_processing_inner:for(int j = 0; j < A_NUM_COLS; j++) {
@@ -67,7 +69,7 @@ void myip_v1_0_HLS(hls::stream<AXIS_wLAST>& S_AXIS, hls::stream<AXIS_wLAST>& M_A
 	}
 
 
-	myip_v1_0_HLS_transmit:for(int word_cnt = 0; word_cnt < NUMBER_OF_OUTPUT_WORDS; word_cnt++){
+	myip_v1_0_HLS_transmit:for(int word_cnt = 0; word_cnt < NUMBER_OF_OUTPUT_WORDS; word_cnt++) {
 		// M_TLAST (AXI4-Stream signal) required for connection to AXI DMA
 		// M_TLAST is required to be asserted for the last word.
 		// Else, the AXI Stream FIFO / AXI DMA will not know if all the words have been received from the co-processor.
