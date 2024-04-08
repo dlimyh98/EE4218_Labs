@@ -4,8 +4,6 @@
 #endif
 
 #include "xil_exception.h"
-#include "xtmrctr.h"
-#include "xllfifo.h"
 
 #define INTC_DEVICE_ID          XPAR_SCUGIC_SINGLE_DEVICE_ID   // SCUGIC
 #define FIFO_INTR_ID            XPAR_FABRIC_LLFIFO_0_VEC_ID    // AXI_FIFO_MM_S_0 fabric interrupt
@@ -15,5 +13,3 @@
 #define AXI_TIMER_INTERRUPT_PRIORITY 240
 #define RISING_EDGE_SENSIIVE    3
 #define NUM_RX_PACKETS_EXPECTED 1
-
-int init_interrupts(XScuGic* IntC, XLlFifo* FifoInstancePtr, XTmrCtr* TimerCtrInstancePtr);

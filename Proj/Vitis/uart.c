@@ -25,7 +25,7 @@ void override_uart_configs(XUartPs* Uart_Ps_ptr) {
 }
 
 
-void receive_from_realterm(u32 uart_base_addr, char* recv_a_matrix, char* recv_b_matrix) {
+void receive_from_realterm(u32 uart_base_addr, char* recv_a_matrix, char* recv_b_matrix, int* test_input_memory) {
     // Data is sent through .csv files via Realterm
     // .csv files MUST be in Unix format (i.e consider line break as 0xA). Can use Vim to set fileformat to Unix.
     // Also note that the file MUST have EOL character. Can use Vim to check also.
@@ -52,7 +52,8 @@ void receive_from_realterm(u32 uart_base_addr, char* recv_a_matrix, char* recv_b
             // Newline, means we are going to 'next row' of matrix
             // Comma, means we are transitioning to next matrix 'element'
             u8 concat_char = concat_char_buffer(buffer, num_insertions-1);
-            
+
+            // Split incoming data into 'A' and 'B' matrix
             if (valid_recv_count < A_NUM_ROWS*A_NUM_COLS) {
                 *recv_a_matrix = concat_char;
                 recv_a_matrix++;
@@ -63,6 +64,12 @@ void receive_from_realterm(u32 uart_base_addr, char* recv_a_matrix, char* recv_b
                 recv_b_matrix++;
             }
 
+            // Store entire input data into one matrix. 
+            // Only works if NUMBER_OF_TEST_VECTORS = 1.
+            *test_input_memory = (int)concat_char;
+            test_input_memory++;
+
+            // Book-keeping before continuing to next loop
             valid_recv_count++;
             num_insertions = 0;
         }
