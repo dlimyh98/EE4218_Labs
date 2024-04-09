@@ -25,7 +25,7 @@ void override_uart_configs(XUartPs* Uart_Ps_ptr) {
 }
 
 
-void receive_from_realterm(u32 uart_base_addr, char* recv_a_matrix, char* recv_b_matrix, int* test_input_memory) {
+void receive_from_realterm(u32 uart_base_addr, char* recv_a_matrix, char* recv_b_matrix, char* recv_c_matrix) {
     // Data is sent through .csv files via Realterm
     // .csv files MUST be in Unix format (i.e consider line break as 0xA). Can use Vim to set fileformat to Unix.
     // Also note that the file MUST have EOL character. Can use Vim to check also.
@@ -39,7 +39,8 @@ void receive_from_realterm(u32 uart_base_addr, char* recv_a_matrix, char* recv_b
         // Check if all valid data has been received
         // Note that we need to check BEFORE we begin RX polling
         if (valid_recv_count == (A_NUM_ROWS*A_NUM_COLS)
-                              + (B_NUM_ROWS*B_NUM_COLS)) return;
+                              + (B_NUM_ROWS*B_NUM_COLS)
+                              + (C_NUM_ROWS*C_NUM_COLS)) return;
 
         // Polling until any data is received
         while (!XUartPs_IsReceiveData(uart_base_addr));
@@ -53,7 +54,7 @@ void receive_from_realterm(u32 uart_base_addr, char* recv_a_matrix, char* recv_b
             // Comma, means we are transitioning to next matrix 'element'
             u8 concat_char = concat_char_buffer(buffer, num_insertions-1);
 
-            // Split incoming data into 'A' and 'B' matrix
+            // Split incoming data into A,B,C matrix
             if (valid_recv_count < A_NUM_ROWS*A_NUM_COLS) {
                 *recv_a_matrix = concat_char;
                 recv_a_matrix++;
@@ -63,11 +64,10 @@ void receive_from_realterm(u32 uart_base_addr, char* recv_a_matrix, char* recv_b
                 *recv_b_matrix = concat_char;
                 recv_b_matrix++;
             }
-
-            // Store entire input data into one matrix. 
-            // Only works if NUMBER_OF_TEST_VECTORS = 1.
-            *test_input_memory = (int)concat_char;
-            test_input_memory++;
+            else {
+                *recv_c_matrix = concat_char;
+                recv_c_matrix++;
+            }
 
             // Book-keeping before continuing to next loop
             valid_recv_count++;
@@ -85,31 +85,6 @@ void receive_from_realterm(u32 uart_base_addr, char* recv_a_matrix, char* recv_b
         }
 
     }
-}
-
-
-void do_processing(char* recv_a_matrix, char* recv_b_matrix, int* trans_res_matrix) {
-    for (int i = 0; i < A_NUM_ROWS; i++) {
-        // Note we use int to prevent overflow
-        // Elements of the input matrices are between 0 and 255, ( (255*255)*(NUM_A_COLS) ) >> 8 = 2032.03125
-        int sum = 0;
-
-        for (int j = 0; j < A_NUM_COLS; j++) {
-            sum += recv_a_matrix[(i*A_NUM_COLS)+j] * recv_b_matrix[j];
-        }
-
-        trans_res_matrix[i] = (sum >> 8);
-    }
-
-    // Sanity Check
-    /*
-    for (int i = 0; i < A_NUM_ROWS * A_NUM_COLS; i++) {
-        xil_printf("%c\n", recv_a_matrix[i]);
-    }
-    
-    for (int i = 0; i < B_NUM_ROWS * B_NUM_COLS; i++) {
-        xil_printf("%c\n", recv_b_matrix[i]);
-    }*/
 }
 
 
