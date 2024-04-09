@@ -5,7 +5,7 @@
 #include "stdio.h"
 
 #define WORD_SIZE_IN_BYTES 4
-#define NUMBER_OF_INPUT_WORDS 455
+#define NUMBER_OF_INPUT_WORDS 520
 #define NUMBER_OF_OUTPUT_WORDS 64
 #define NUMBER_OF_TEST_VECTORS 1
 #define A_NUM_ROWS 64
