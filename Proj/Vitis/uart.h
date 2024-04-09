@@ -19,8 +19,7 @@
 int init_UART(XUartPs* Uart_Ps);
 void override_uart_configs(XUartPs* Uart_Ps);
 
-void receive_from_realterm(u32 uart_base_addr, char* recv_a_matrix, char* recv_b_matrix, int* test_input_memory);
-void do_processing(char* recv_a_matrix, char* recv_b_matrix, int* trans_res_matrix);
+void receive_from_realterm(u32 uart_base_addr, char* recv_a_matrix, char* recv_b_matrix, char* recv_c_matrix);
 void send_to_realterm(u32 uart_base_address, int* trans_res_matrix);
 
 char concat_char_buffer(char* buffer_ptr, int tail_index);

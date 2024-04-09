@@ -10,4 +10,5 @@
     - Corresponds to 2+1 weights for EACH neuron in output layer
 
 
-4. Output Matrix = 
+4. Output Matrix = 64*1 elements
+    - 64 labels corresponding to 64 input data points
