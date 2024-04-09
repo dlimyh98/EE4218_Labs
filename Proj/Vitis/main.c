@@ -18,79 +18,78 @@ int main()
 
     // Accept files from UART, store data into memory
     xil_printf("Ready to accept files from Realterm\n");
-    receive_from_realterm(UART_BASEADDR, recv_a_matrix, recv_b_matrix, test_input_memory);
-
-    set_expected_memory();
+    receive_from_realterm(UART_BASEADDR, recv_a_matrix, recv_b_matrix, recv_c_matrix);
 
     // 1. Load value in TLR0 to TCR0 (by writing to LOAD0)
     // 2. Clear LOAD0, set ENT0 (to let counter run)
     XTmrCtr_Start(TimerCtrInstancePtr, TIMER_CNTR_0);
 
-    do_processing(recv_a_matrix, recv_b_matrix, test_result_expected_memory);
+    SOFT_processing(recv_a_matrix, recv_b_matrix, recv_c_matrix, hidden_layer_neurons, output_layer_neurons);
 
     // Read from TCR0
-	sw_mult_time = XTmrCtr_GetValue(TimerCtrInstancePtr, TIMER_CNTR_0);
+	//sw_mult_time = XTmrCtr_GetValue(TimerCtrInstancePtr, TIMER_CNTR_0);
 
 
-    #ifndef HARD_HLS
-        for (int test_case_cnt = 0; test_case_cnt < NUMBER_OF_TEST_VECTORS; test_case_cnt++) {
-            int Status;
+    //#ifndef HARD_HLS
+        //for (int test_case_cnt = 0; test_case_cnt < NUMBER_OF_TEST_VECTORS; test_case_cnt++) {
+            //int Status;
 
-            /*********** TX, Main Memory --> Coprocessor ************/
-            Status = mm2s_transmit(&AxiDma, test_case_cnt);
-            if (Status != XST_SUCCESS) {
-                xil_printf("mm2s TX error\n");
-                return XST_FAILURE;
-            } 
-            //else {
-                //xil_printf("mm2s TX success\n");
+            ///*********** TX, Main Memory --> Coprocessor ************/
+            //Status = mm2s_transmit(&AxiDma, test_case_cnt);
+            //if (Status != XST_SUCCESS) {
+                //xil_printf("mm2s TX error\n");
+                //return XST_FAILURE;
+            //} 
+            ////else {
+                ////xil_printf("mm2s TX success\n");
+            ////}
+
+            ///*********** RX, Coprocessor --> Main Memory ************/
+            //Status = s2mm_transmit(&AxiDma, test_case_cnt);
+            //if (Status != XST_SUCCESS) {
+                //xil_printf("s2mm TX error\n");
+                //return XST_FAILURE;
+            //} 
+            ////else {
+                ////xil_printf("s2mm TX success\n");
+            ////}
+        //}
+    //#else
+        //// Communicate to Coprocessor IP via AXI-Stream
+        //for (; test_case_cnt < NUMBER_OF_TEST_VECTORS; test_case_cnt++) {
+            ///********************* TX *********************/
+            //if (AXIS_transmit(FifoInstancePtr) != XST_SUCCESS) {
+                //xil_printf("TX error\n");
+                //return XST_FAILURE;
             //}
 
-            /*********** RX, Coprocessor --> Main Memory ************/
-            Status = s2mm_transmit(&AxiDma, test_case_cnt);
-            if (Status != XST_SUCCESS) {
-                xil_printf("s2mm TX error\n");
-                return XST_FAILURE;
-            } 
-            //else {
-                //xil_printf("s2mm TX success\n");
+            //// Interrupt mode: Do other work while waiting for TX completion
+            //#ifndef AXI_STREAM_POLLING_MODE
+                //while (!TX_done) {
+                    //asm("nop");
+                    ////xil_printf("Busy TX\n");
+                //}
+            //#endif
+
+            ///********************* RX *********************/
+            //// Polling mode: Polling read of RDRO register
+            //// Interrupt mode: Only read RDRO register when RC flag is raised
+            //if (AXIS_receive(FifoInstancePtr) != XST_SUCCESS) {
+                //xil_printf("RX error\n");
+                //return XST_FAILURE;
             //}
-        }
-    #else
-        // Communicate to Coprocessor IP via AXI-Stream
-        for (; test_case_cnt < NUMBER_OF_TEST_VECTORS; test_case_cnt++) {
-            /********************* TX *********************/
-            if (AXIS_transmit(FifoInstancePtr) != XST_SUCCESS) {
-                xil_printf("TX error\n");
-                return XST_FAILURE;
-            }
-
-            // Interrupt mode: Do other work while waiting for TX completion
-            #ifndef AXI_STREAM_POLLING_MODE
-                while (!TX_done) {
-                    asm("nop");
-                    //xil_printf("Busy TX\n");
-                }
-            #endif
-
-            /********************* RX *********************/
-            // Polling mode: Polling read of RDRO register
-            // Interrupt mode: Only read RDRO register when RC flag is raised
-            if (AXIS_receive(FifoInstancePtr) != XST_SUCCESS) {
-                xil_printf("RX error\n");
-                return XST_FAILURE;
-            }
-        }
-    #endif
+        //}
+    //#endif
 
 
-	hw_mult_time = XTmrCtr_GetValue(TimerCtrInstancePtr, TIMER_CNTR_0) - sw_mult_time;
-    // TODO: For more accuracy, we can reset Timer0 before counting for HW mult
-    xil_printf("SW mult is %d\n", sw_mult_time);
-    xil_printf("HW mult is %d", hw_mult_time);
+	//hw_mult_time = XTmrCtr_GetValue(TimerCtrInstancePtr, TIMER_CNTR_0) - sw_mult_time;
+    //// TODO: For more accuracy, we can reset Timer0 before counting for HW mult
+    //xil_printf("SW mult is %d\n", sw_mult_time);
+    //xil_printf("HW mult is %d", hw_mult_time);
 
     // Verify results
-    return (verify());
+    //return (verify());
+    return 0;
 }
 
 
@@ -354,25 +353,58 @@ int verify() {
     return XST_SUCCESS;
 }
 
-void set_expected_memory() {
-	// A and B are compressed into one array
-	int sum = 0;
-	int num_elements_summed = 0;
-	int B_traversal = 0;
-	int result_traversal = 0;
+void SOFT_processing(char* recv_a_matrix, char* recv_b_matrix, char* recv_c_matrix, 
+                    u8 (*hidden_layer_neurons)[A_NUM_ROWS], u8* output_layer_neurons) {
+    /**************************** COMPUTE HIDDEN LAYER ************************************/
+    // Iterate through 'A_NUM_ROWS' datapoints
+    for (int i = 0; i < A_NUM_ROWS; i++) {
 
-	for (int i = 0; i < A_NUM_COLS*A_NUM_ROWS; i++) {
-		sum += test_input_memory[i] * test_input_memory[(A_NUM_ROWS*A_NUM_COLS)+B_traversal];
-        B_traversal++;
-		num_elements_summed++;
+        // Weight of hidden layer neuron is maximally ((255*255)*(NUM_A_COLS) + 255)
+        int sum_1 = 0;  // First neuron of hidden layer
+        int sum_2 = 0;  // Second neuron of hidden layer
 
-		if (num_elements_summed == A_NUM_COLS) {
-			test_result_expected_memory[result_traversal] = (sum >> 8);
-			result_traversal++;
+        // Iterate through 'A_NUM_COLS' features that EACH datapoint has
+        for (int j = 0; j < A_NUM_COLS; j++) {
+            // Multiply each datapoint feature with the corresponding edge weights
+            // Note that we disregard the first row of recv_b_matrix, since that is bias term (for both neurons in the hidden layer), which is NOT multiplied to any feature
+            char datapoint = recv_a_matrix[(i*A_NUM_COLS) + (j)];
+            sum_1 += datapoint * recv_b_matrix[B_DISREGARD_BIAS_TERM + (j*NUM_NEURONS_HIDDEN_LAYER)];                              // First neuron of hidden layer
+            sum_2 += datapoint * recv_b_matrix[B_DISREGARD_BIAS_TERM + B_OFFSET_FOR_SECOND_NEURON + (j*NUM_NEURONS_HIDDEN_LAYER)]; // Second neuron of hidden layer
+        }
 
-			sum = 0;
-			num_elements_summed = 0;
-            B_traversal = 0;
-		}
-	}
+        // Include the bias terms now
+        sum_1 += recv_b_matrix[HIDDEN_LAYER_FIRST_NEURON];
+        sum_2 += recv_b_matrix[HIDDEN_LAYER_SECOND_NEURON];
+
+        // Restore precision, then store the computed weight of our hidden layer neuron
+        hidden_layer_neurons[HIDDEN_LAYER_FIRST_NEURON][i] = (sum_1 >> NUM_FRACTIONAL_BITS);
+        hidden_layer_neurons[HIDDEN_LAYER_SECOND_NEURON][i] = (sum_2 >> NUM_FRACTIONAL_BITS);
+    }
+
+    /**************************** COMPUTE OUTPUT LAYER ************************************/
+    // Iterate through 'A_NUM_ROWS' datapoints from BOTH neurons simultaneously
+    for (int i = 0; i < A_NUM_ROWS; i++) {
+
+        int sum = 0;
+
+        // Iterate through the weights of output layer, ignoring bias term
+        for (int j = 0; j < NUM_WEIGHTS_HIDDEN_TO_OUTPUT-1; j++) {
+            sum += sigmoid_function(hidden_layer_neurons[j][i]) * recv_c_matrix[C_DISREGARD_BIAS_TERM + j];
+        }
+
+        // Include the bias term
+        sum += recv_c_matrix[0];
+
+        // Restore precision, then store the computed weight of our output neuron
+        // Note output neuron has linear activation function
+        output_layer_neurons[i] =  (sum >> NUM_FRACTIONAL_BITS);
+    }
+
+    for (int i = 0; i < A_NUM_ROWS; i++) {
+        xil_printf("%d,%0d; ", i+1, output_layer_neurons[i]);
+    }
+}
+
+u8 sigmoid_function(u8 sigmoid_LUT_index) {
+    return sigmoid_LUT[sigmoid_LUT_index];
 }
