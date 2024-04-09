@@ -1,60 +1,5 @@
-// Choose between 
-//  - AXI-DMA (Polling) connected HDL; (HARD_HDL)
-//  - AXI-Stream (Interrupt) connected HLS (HARD_HLS)
-#define HARD_HLS
+#include "main.h"
 
-/***************************** Custom Includes *********************************/
-#include "uart.h"
-#include "timer.h"
-#include "interrupts.h"
-#include "axi_stream.h"
-#include "axi_dma.h"
-
-/************************** Variable Definitions *****************************/
-// UART
-XUartPs Uart_Ps;    // Instance of UART Driver. Passed around by functions to refer to SPECIFIC driver instance
-
-// AXI-Stream
-u16 FIFODeviceId = FIFO_DEV_ID;
-XLlFifo FifoInstance; 	                    // AXIS-FIFO device instance
-XLlFifo* FifoInstancePtr = &FifoInstance; 
-
-// AXI-DMA
-XAxiDma AxiDma;     // AXI_DMA driver instance
-
-// Timer
-XTmrCtr TimerCounterInst;                   // AXI-Timer device instance
-XTmrCtr* TimerCtrInstancePtr = &TimerCounterInst;
-
-// Interrupts
-static XScuGic IntC;                        // Interrupt Controller instance
-volatile int TX_done = 0;
-volatile int packets_received = 0;
-
-// main.c
-char recv_a_matrix[A_NUM_ROWS*A_NUM_COLS] = {0};
-char recv_b_matrix[B_NUM_ROWS*B_NUM_COLS] = {0};
-int trans_res_matrix[A_NUM_ROWS*B_NUM_COLS] = {0};
-
-int test_case_cnt = 0;
-int test_input_memory [NUMBER_OF_TEST_VECTORS*NUMBER_OF_INPUT_WORDS];
-int result_memory [NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS];
-int test_result_expected_memory [NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS];
-
-/************************** Function Definitions *****************************/
-int initialization();
-void set_expected_memory();
-int verify();
-int init_interrupts(XScuGic* IntC, XLlFifo* FifoInstancePtr, XTmrCtr* TimerCtrInstancePtr);
-static void axi_stream_interrupt_handler (XLlFifo* FifoInstancePtr);
-static void timer_interrupt_handler();
-int AXIS_transmit(XLlFifo* FifoInstancePtr);
-int AXIS_receive(XLlFifo* FifoInstancePtr);
-
-
-/*****************************************************************************
-* Main function
-******************************************************************************/
 int main()
 {
     u32 sw_mult_time = 0;
@@ -71,11 +16,10 @@ int main()
         xil_printf("HARD_HLS chosen. AXI-Stream(Interrupt).\n");
     #endif
 
-    // Accept files from UART, store data into 
+    // Accept files from UART, store data into memory
     xil_printf("Ready to accept files from Realterm\n");
     receive_from_realterm(UART_BASEADDR, recv_a_matrix, recv_b_matrix, test_input_memory);
 
-    xil_printf("Do SW processing\n");
     set_expected_memory();
 
     // 1. Load value in TLR0 to TCR0 (by writing to LOAD0)
