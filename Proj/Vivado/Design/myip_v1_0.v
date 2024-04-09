@@ -1,18 +1,3 @@
-/* 
-----------------------------------------------------------------------------------
---	(c) Rajesh C Panicker, NUS
---  Description : Matrix Multiplication AXI Stream Coprocessor. Based on the orginal AXIS Coprocessor template (c) Xilinx Inc
--- 	Based on the orginal AXIS coprocessor template (c) Xilinx Inc
---	License terms :
---	You are free to use this code as long as you
---		(i) DO NOT post a modified version of this on any public repository;
---		(ii) use it only for educational purposes;
---		(iii) accept the responsibility to ensure that your implementation does not violate any intellectual property of any entity.
---		(iv) accept that the program is provided "as is" without warranty of any kind or assurance regarding its suitability for any particular purpose;
---		(v) send an email to rajesh.panicker@ieee.org briefly mentioning its use (except when used for the course EE4218 at the National University of Singapore);
---		(vi) retain this notice in this file or any files derived from this.
-----------------------------------------------------------------------------------
-*/
 /*
 -------------------------------------------------------------------------------
 --
@@ -65,39 +50,47 @@ module myip_v1_0
 //----------------------------------------
 
 // RAM parameters
-	localparam A_depth_bits = 9;  	// A is a 64x8 matrix
-	localparam B_depth_bits = 3; 	// B is a 8x1 matrix
+	localparam A_depth_bits = 9;  	// A is a 64x7 matrix
+	localparam B_depth_bits = 4; 	// B is a 8x2 matrix
+	localparam C_depth_bits = 2; 	// C is a 3x1 matrix
 	localparam RES_depth_bits = 6;	// RES is a 64x1 matrix
-	localparam width = 8;			// all 8-bit data
-	localparam NUMBER_OF_A_WORDS = 2**A_depth_bits;
+	localparam width = 8;			// PS sends 32bit data along AXI-4, but the 'underlying' data is actually 8bit
+
+	localparam NUMBER_OF_A_WORDS = 448;
 	localparam NUMBER_OF_B_WORDS = 2**B_depth_bits;
-	localparam NUMBER_OF_INPUT_WORDS  = NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS;	// Total number of input data.
-	localparam NUMBER_OF_OUTPUT_WORDS = 2**RES_depth_bits;	                    // Total number of output data
-	
-// wires (or regs) to connect to RAMs and matrix_multiply_0 for assignment 1
-// those which are assigned in an always block of myip_v1_0 shoud be changes to reg.
-	reg  	A_write_en = 0;								// myip_v1_0 -> A_RAM. To be assigned within myip_v1_0. Possibly reg.
-	reg	[A_depth_bits-1:0] A_write_address;		    // myip_v1_0 -> A_RAM. To be assigned within myip_v1_0. Possibly reg. 
-	reg	[width-1:0] A_write_data_in;			    // myip_v1_0 -> A_RAM. To be assigned within myip_v1_0. Possibly reg.
-	wire	A_read_en;								// matrix_multiply_0 -> A_RAM.
-	wire	[A_depth_bits-1:0] A_read_address;		// matrix_multiply_0 -> A_RAM.
-	wire	[width-1:0] A_read_data_out;			// A_RAM -> matrix_multiply_0.
+	localparam NUMBER_OF_C_WORDS = 3;
 
-	reg	B_write_en = 0;								    // myip_v1_0 -> B_RAM. To be assigned within myip_v1_0. Possibly reg.
-	reg	[B_depth_bits-1:0] B_write_address;		    // myip_v1_0 -> B_RAM. To be assigned within myip_v1_0. Possibly reg.
-	reg	[width-1:0] B_write_data_in;			    // myip_v1_0 -> B_RAM. To be assigned within myip_v1_0. Possibly reg.
-	wire	B_read_en;								// matrix_multiply_0 -> B_RAM.
-	wire	[B_depth_bits-1:0] B_read_address;		// matrix_multiply_0 -> B_RAM.
-	wire	[width-1:0] B_read_data_out;			// B_RAM -> matrix_multiply_0.
-
-	wire	RES_write_en;							// matrix_multiply_0 -> RES_RAM.
-	wire	[RES_depth_bits-1:0] RES_write_address;	// matrix_multiply_0 -> RES_RAM.
-	wire	[width-1:0] RES_write_data_in;			// matrix_multiply_0 -> RES_RAM.
-	reg	    RES_read_en = 0;  						// myip_v1_0 -> RES_RAM. To be assigned within myip_v1_0. Possibly reg.
-	reg	    [RES_depth_bits-1:0] RES_read_address;	// myip_v1_0 -> RES_RAM. To be assigned within myip_v1_0. Possibly reg.
-	wire	[width-1:0] RES_read_data_out;			// RES_RAM -> myip_v1_0
+	localparam NUMBER_OF_INPUT_WORDS  = NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS + NUMBER_OF_C_WORDS;	// Total number of input data.
+	localparam NUMBER_OF_OUTPUT_WORDS = 2**RES_depth_bits;	                    					// Total number of output data
 	
-	// wires (or regs) to connect to matrix_multiply for assignment 1
+	reg A_write_en = 0;							// myip_v1_0 -> A_RAM.
+	reg	[A_depth_bits-1:0] A_write_address;		// myip_v1_0 -> A_RAM.
+	reg	[width-1:0] A_write_data_in;			// myip_v1_0 -> A_RAM.
+	wire A_read_en;								// matrix_multiply_0 -> A_RAM.
+	wire [A_depth_bits-1:0] A_read_address;		// matrix_multiply_0 -> A_RAM.
+	wire [width-1:0] A_read_data_out;			// A_RAM -> matrix_multiply_0.
+
+	reg	B_write_en = 0;					 		// myip_v1_0 -> B_RAM.
+	reg	[B_depth_bits-1:0] B_write_address;		// myip_v1_0 -> B_RAM.
+	reg	[width-1:0] B_write_data_in;			// myip_v1_0 -> B_RAM.
+	wire B_read_en;								// matrix_multiply_0 -> B_RAM.
+	wire [B_depth_bits-1:0] B_read_address;		// matrix_multiply_0 -> B_RAM.
+	wire [width-1:0] B_read_data_out;			// B_RAM -> matrix_multiply_0.
+
+	reg	C_write_en = 0;					 		// myip_v1_0 -> C_RAM.
+	reg	[C_depth_bits-1:0] C_write_address;		// myip_v1_0 -> C_RAM.
+	reg	[width-1:0] C_write_data_in;			// myip_v1_0 -> C_RAM.
+	wire C_read_en;								// matrix_multiply_0 -> C_RAM.
+	wire [C_depth_bits-1:0] C_read_address;		// matrix_multiply_0 -> C_RAM.
+	wire [width-1:0] C_read_data_out;			// C_RAM -> matrix_multiply_0.
+
+	wire RES_write_en;								// matrix_multiply_0 -> RES_RAM.
+	wire [RES_depth_bits-1:0] RES_write_address;	// matrix_multiply_0 -> RES_RAM.
+	wire [width-1:0] RES_write_data_in;				// matrix_multiply_0 -> RES_RAM.
+	reg RES_read_en = 0;  							// myip_v1_0 -> RES_RAM. 
+	reg [RES_depth_bits-1:0] RES_read_address;		// myip_v1_0 -> RES_RAM. 
+	wire [width-1:0] RES_read_data_out;				// RES_RAM -> myip_v1_0
+	
 	reg	Matrix_Start; 							 	// myip_v1_0 -> matrix_multiply_0. To be assigned within myip_v1_0. Possibly reg.
 	wire Matrix_Done;							    // matrix_multiply_0 -> myip_v1_0. 
 			
@@ -187,14 +180,21 @@ module myip_v1_0
 							A_write_address <= read_counter;
 							A_write_data_in <= S_AXIS_TDATA[width-1:0];
 						end 
-						else begin
+						else if (NUMBER_OF_A_WORDS <= read_counter
+								&& read_counter < (NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS)) begin
 							// Incoming data belongs to 'B' matrix
 							B_write_en <= 1; A_write_en <= 0;
 							B_write_address <= read_counter - NUMBER_OF_A_WORDS;
 							B_write_data_in <= S_AXIS_TDATA[width-1:0];
 						end
+						else begin
+							// Incoming data belongs to 'C' matrix
+							C_write_en <= 1; B_write_en <= 0; A_write_en <= 0;
+							C_write_address <= read_counter - NUMBER_OF_A_WORDS - NUMBER_OF_B_WORDS;
+							C_write_data_in <= S_AXIS_TDATA[width-1:0];
+						end
 
-						// Still continue filling RAM_A/RAM_B
+						// Still continue filling RAM_A/RAM_B/RAM_C
 						// Note we will keep filling as long as not last element
 						read_counter <= read_counter + 1;
 					end
@@ -202,8 +202,8 @@ module myip_v1_0
 					/*
 					Potential problem : S_AXIS_TVALID is deasserted while we still need to write to RAM
 					i.e - We have captured the value of S_AXIS_TDATA already, but we still need an additional 1 clock cycle to write to RAM
-					    - Hence, B_write_en <= 0 and State <= Compute must be OUTSIDE of the check for S_AXIS_TVALID, to ensure that the last value is
-						  captured in B_RAM
+					    - Hence, C_write_en <= 0 and State <= Compute must be OUTSIDE of the check for S_AXIS_TVALID, to ensure that the last value is
+						  captured in C_RAM
 					*/
 
 					// If we are expecting a variable number of words, we should make use of S_AXIS_TLAST.
@@ -213,7 +213,7 @@ module myip_v1_0
 						S_AXIS_TREADY 	<= 0;	// SLAVE->MASTER: Indication from SLAVE to MASTER that SLAVE not accepting data
 						state      		<= Compute;
 						Matrix_Start    <= 1;   // Pulse Matrix_Start to begin 'Compute' phase
-						B_write_en <= 0;
+						C_write_en <= 0;
 						read_counter <= 0;
 					end
 				end
@@ -345,7 +345,6 @@ module myip_v1_0
 	end
 
 
-	// Connection to sub-modules / components for assignment 1
 	memory_RAM 
 	#(
 		.width(width), 
@@ -376,7 +375,21 @@ module myip_v1_0
 		.read_address(B_read_address),
 		.read_data_out(B_read_data_out)
 	);
-										
+
+	memory_RAM 
+	#(
+		.width(width), 
+		.depth_bits(C_depth_bits)
+	) C_RAM 
+	(
+		.clk(ACLK),
+		.write_en(C_write_en),
+		.write_address(C_write_address),
+		.write_data_in(C_write_data_in),
+		.read_en(C_read_en),    
+		.read_address(C_read_address),
+		.read_data_out(C_read_data_out)
+	);
 										
 	memory_RAM 
 	#(

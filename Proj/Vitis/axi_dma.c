@@ -2,7 +2,7 @@
 
 int s2mm_transmit(XAxiDma* AxiDma, int test_case_cnt) {
     // Tell DMA to do a transfer (note since Stream is source, we need not specify source address)
-    // NOTE: Length of transfer is in bits,
+    // NOTE: Length of transfer is in bytes
     int Status = XAxiDma_SimpleTransfer(AxiDma, (u32)(HARD_result_memory + test_case_cnt*NUMBER_OF_OUTPUT_WORDS), 
                         NUMBER_OF_OUTPUT_WORDS*WORD_SIZE_IN_BYTES, XAXIDMA_DEVICE_TO_DMA);
     if (Status != XST_SUCCESS) return XST_FAILURE;
@@ -66,6 +66,7 @@ int mm2s_transmit(XAxiDma* AxiDma, int test_case_cnt) {
     Xil_DCacheFlushRange((u32)(HARD_input_memory+test_case_cnt*NUMBER_OF_INPUT_WORDS), NUMBER_OF_INPUT_WORDS*WORD_SIZE_IN_BYTES);
 
     // Tell DMA to do a transfer (note since Stream is destination, we need not specify destination address)
+    // NOTE: Length of transfer is in bytes
     int Status = XAxiDma_SimpleTransfer(AxiDma, (u32)(HARD_input_memory + test_case_cnt*NUMBER_OF_INPUT_WORDS), 
                         NUMBER_OF_INPUT_WORDS*WORD_SIZE_IN_BYTES, XAXIDMA_DMA_TO_DEVICE);
     if (Status != XST_SUCCESS) return XST_FAILURE;
