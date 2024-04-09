@@ -2,8 +2,9 @@
 
 int s2mm_transmit(XAxiDma* AxiDma, int test_case_cnt) {
     // Tell DMA to do a transfer (note since Stream is source, we need not specify source address)
-    int Status = XAxiDma_SimpleTransfer(AxiDma, (u32)(HARD_result_memory+test_case_cnt*NUMBER_OF_OUTPUT_WORDS), 
-                        4*NUMBER_OF_OUTPUT_WORDS, XAXIDMA_DEVICE_TO_DMA);
+    // NOTE: Length of transfer is in bits,
+    int Status = XAxiDma_SimpleTransfer(AxiDma, (u32)(HARD_result_memory + test_case_cnt*NUMBER_OF_OUTPUT_WORDS), 
+                        NUMBER_OF_OUTPUT_WORDS*WORD_SIZE_IN_BYTES, XAXIDMA_DEVICE_TO_DMA);
     if (Status != XST_SUCCESS) return XST_FAILURE;
 
     // Check receive channel, it should be running after SimpleTransfer()
@@ -31,7 +32,7 @@ int s2mm_transmit(XAxiDma* AxiDma, int test_case_cnt) {
 
     // INVALIDATE the destCache (Main Memory) after receiving the data, so that 
     // PS is forced to read from Main Memory (not cache), which is exactly where Coprocessor wrote to
-    Xil_DCacheInvalidateRange((u32)(HARD_result_memory+test_case_cnt*NUMBER_OF_OUTPUT_WORDS), 4*NUMBER_OF_OUTPUT_WORDS);
+    Xil_DCacheInvalidateRange((u32)(HARD_result_memory+test_case_cnt*NUMBER_OF_OUTPUT_WORDS), NUMBER_OF_OUTPUT_WORDS);
 
     return XST_SUCCESS;
 }
@@ -61,12 +62,12 @@ int mm2s_transmit(XAxiDma* AxiDma, int test_case_cnt) {
     // xil_printf("%p\n", (void*)HARD_result_memory);
 
     // FLUSH the srcCache (Main Memory) and destCache (Coprocessor) before the DMA transfer, so main memory has most recent data
-    Xil_DCacheFlushRange((u32)(HARD_result_memory+test_case_cnt*NUMBER_OF_INPUT_WORDS), 4*NUMBER_OF_INPUT_WORDS);
-    Xil_DCacheFlushRange((u32)(HARD_input_memory+test_case_cnt*NUMBER_OF_INPUT_WORDS), 4*NUMBER_OF_INPUT_WORDS);
+    Xil_DCacheFlushRange((u32)(HARD_result_memory+test_case_cnt*NUMBER_OF_INPUT_WORDS), NUMBER_OF_INPUT_WORDS*WORD_SIZE_IN_BYTES);
+    Xil_DCacheFlushRange((u32)(HARD_input_memory+test_case_cnt*NUMBER_OF_INPUT_WORDS), NUMBER_OF_INPUT_WORDS*WORD_SIZE_IN_BYTES);
 
     // Tell DMA to do a transfer (note since Stream is destination, we need not specify destination address)
-    int Status = XAxiDma_SimpleTransfer(AxiDma, (u32)(HARD_input_memory+test_case_cnt*NUMBER_OF_INPUT_WORDS), 
-                        4*NUMBER_OF_INPUT_WORDS, XAXIDMA_DMA_TO_DEVICE);
+    int Status = XAxiDma_SimpleTransfer(AxiDma, (u32)(HARD_input_memory + test_case_cnt*NUMBER_OF_INPUT_WORDS), 
+                        NUMBER_OF_INPUT_WORDS*WORD_SIZE_IN_BYTES, XAXIDMA_DMA_TO_DEVICE);
     if (Status != XST_SUCCESS) return XST_FAILURE;
 
     // Polling check of DMA's MM2S_DMASR register's Idle flag, but they invert the result
