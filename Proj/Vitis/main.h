@@ -48,12 +48,6 @@ volatile int packets_received = 0;
 // SOFT
 u8 SOFT_hidden_layer_neurons[NUM_NEURONS_HIDDEN_LAYER][A_NUM_ROWS];
 u8 SOFT_output_layer_neurons[A_NUM_ROWS];
-
-
-int test_case_cnt = 0;
-int HARD_input_memory[NUMBER_OF_TEST_VECTORS*NUMBER_OF_INPUT_WORDS];
-int HARD_result_memory[NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS];
-
 // Suppose f(x) describes sigmoid function, and x is in Q<0.8> format.
 // Suppose we scale up x to Q<8.0> format.
 // Then applying sigmoid definition, store sigmoid output as (2^8) LUT entries, EACH as Q<8.0> uint8.
@@ -75,6 +69,12 @@ u8 sigmoid_LUT[256] = {12,12,12,12,13,13,13,14,14,14,15,15,15,16,16,16,
                         221,222,223,223,224,225,225,226,227,227,228,228,229,229,230,231,
                         231,232,232,233,233,234,234,234,235,235,236,236,237,237,237,238,
                         238,239,239,239,240,240,240,241,241,241,242,242,242,243,243,243};
+
+
+// HARD
+int test_case_cnt = 0;
+int HARD_input_memory[NUMBER_OF_TEST_VECTORS*NUMBER_OF_INPUT_WORDS];
+int HARD_result_memory[NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS];
 
 /******************************* FUNCTION DECLARATIONS *************************************/
 int initialization();
