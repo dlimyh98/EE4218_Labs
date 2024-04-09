@@ -23,6 +23,10 @@
 /******************************* VARIABLES *************************************/
 // UART
 XUartPs Uart_Ps;    // Instance of UART Driver. Passed around by functions to refer to SPECIFIC driver instance
+char recv_a_matrix[A_NUM_ROWS*A_NUM_COLS] = {0};
+char recv_b_matrix[B_NUM_ROWS*B_NUM_COLS] = {0};
+char recv_c_matrix[C_NUM_ROWS*C_NUM_COLS] = {0};
+int trans_res_matrix[A_NUM_ROWS*B_NUM_COLS] = {0};
 
 // AXI-Stream
 u16 FIFODeviceId = FIFO_DEV_ID;
@@ -41,22 +45,14 @@ static XScuGic IntC;                        // Interrupt Controller instance
 volatile int TX_done = 0;
 volatile int packets_received = 0;
 
-// main.c
-char recv_a_matrix[A_NUM_ROWS*A_NUM_COLS] = {0};
-char recv_b_matrix[B_NUM_ROWS*B_NUM_COLS] = {0};
-char recv_c_matrix[C_NUM_ROWS*C_NUM_COLS] = {0};
-int trans_res_matrix[A_NUM_ROWS*B_NUM_COLS] = {0};
-
-u8 hidden_layer_neurons[NUM_NEURONS_HIDDEN_LAYER][A_NUM_ROWS];
-u8 output_layer_neurons[A_NUM_ROWS];
-
-int SOFT_labels[A_NUM_ROWS*NUM_NEURONS_OUTPUT_LAYER];
+// SOFT
+u8 SOFT_hidden_layer_neurons[NUM_NEURONS_HIDDEN_LAYER][A_NUM_ROWS];
+u8 SOFT_output_layer_neurons[A_NUM_ROWS];
 
 
 int test_case_cnt = 0;
-int test_input_memory[NUMBER_OF_TEST_VECTORS*NUMBER_OF_INPUT_WORDS];
-int result_memory[NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS];
-int test_result_expected_memory[NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS];
+int HARD_input_memory[NUMBER_OF_TEST_VECTORS*NUMBER_OF_INPUT_WORDS];
+int HARD_result_memory[NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS];
 
 // Suppose f(x) describes sigmoid function, and x is in Q<0.8> format.
 // Suppose we scale up x to Q<8.0> format.
@@ -89,5 +85,5 @@ static void timer_interrupt_handler();
 int AXIS_transmit(XLlFifo* FifoInstancePtr);
 int AXIS_receive(XLlFifo* FifoInstancePtr);
 
-void SOFT_processing(char* recv_a_matrix, char* recv_b_matrix, char* recv_c_matrix, u8 (*hidden_layer_neurons)[A_NUM_ROWS], u8* output_layer_neurons);
+void SOFT_processing(char* recv_a_matrix, char* recv_b_matrix, char* recv_c_matrix, u8 (*SOFT_hidden_layer_neurons)[A_NUM_ROWS], u8* SOFT_output_layer_neurons);
 u8 sigmoid_function(u8 sigmoid_LUT_index);
