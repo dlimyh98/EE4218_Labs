@@ -33,11 +33,13 @@ module myip_v1_0
 	/***************************************** I/O *****************************************/
 	input					ACLK;    // Synchronous clock
 	input					ARESETN; // System reset, active low
+
 	// Slave in interface
 	output	reg				S_AXIS_TREADY;  // Ready to accept data in
 	input	[31 : 0]		S_AXIS_TDATA;   // Data in
 	input					S_AXIS_TLAST;   // Optional data in qualifier
 	input					S_AXIS_TVALID;  // Data in is valid
+
 	// Master out interface
 	output	reg				M_AXIS_TVALID;  // Data out is valid
 	output	wire [31 : 0]	M_AXIS_TDATA;   // Data Out
@@ -61,34 +63,34 @@ module myip_v1_0
 	reg A_write_en = 0;							// myip_v1_0 -> A_RAM.
 	reg	[A_depth_bits-1:0] A_write_address;		// myip_v1_0 -> A_RAM.
 	reg	[width-1:0] A_write_data_in;			// myip_v1_0 -> A_RAM.
-	wire A_read_en;								// matrix_multiply_0 -> A_RAM.
-	wire [A_depth_bits-1:0] A_read_address;		// matrix_multiply_0 -> A_RAM.
-	wire [width-1:0] A_read_data_out;			// A_RAM -> matrix_multiply_0.
+	wire A_read_en;								// Inference_0 -> A_RAM.
+	wire [A_depth_bits-1:0] A_read_address;		// Inference_0 -> A_RAM.
+	wire [width-1:0] A_read_data_out;			// A_RAM -> Inference_0.
 
 	reg	B_write_en = 0;					 		// myip_v1_0 -> B_RAM.
 	reg	[B_depth_bits-1:0] B_write_address;		// myip_v1_0 -> B_RAM.
 	reg	[width-1:0] B_write_data_in;			// myip_v1_0 -> B_RAM.
-	wire B_read_en;								// matrix_multiply_0 -> B_RAM.
-	wire [B_depth_bits-1:0] B_read_address;		// matrix_multiply_0 -> B_RAM.
-	wire [width-1:0] B_read_data_out;			// B_RAM -> matrix_multiply_0.
+	wire B_read_en;								// Inference_0 -> B_RAM.
+	wire [B_depth_bits-1:0] B_read_address;		// Inference_0 -> B_RAM.
+	wire [width-1:0] B_read_data_out;			// B_RAM -> Inference_0.
 
 	reg	C_write_en = 0;					 		// myip_v1_0 -> C_RAM.
 	reg	[C_depth_bits-1:0] C_write_address;		// myip_v1_0 -> C_RAM.
 	reg	[width-1:0] C_write_data_in;			// myip_v1_0 -> C_RAM.
-	wire C_read_en;								// matrix_multiply_0 -> C_RAM.
-	wire [C_depth_bits-1:0] C_read_address;		// matrix_multiply_0 -> C_RAM.
-	wire [width-1:0] C_read_data_out;			// C_RAM -> matrix_multiply_0.
+	wire C_read_en;								// Inference_0 -> C_RAM.
+	wire [C_depth_bits-1:0] C_read_address;		// Inference_0 -> C_RAM.
+	wire [width-1:0] C_read_data_out;			// C_RAM -> Inference_0.
 
-	wire RES_write_en;								// matrix_multiply_0 -> RES_RAM.
-	wire [RES_depth_bits-1:0] RES_write_address;	// matrix_multiply_0 -> RES_RAM.
-	wire [width-1:0] RES_write_data_in;				// matrix_multiply_0 -> RES_RAM.
+	wire RES_write_en;								// Inference_0 -> RES_RAM.
+	wire [RES_depth_bits-1:0] RES_write_address;	// Inference_0 -> RES_RAM.
+	wire [width-1:0] RES_write_data_in;				// Inference_0 -> RES_RAM.
 	reg RES_read_en = 0;  							// myip_v1_0 -> RES_RAM. 
 	reg [RES_depth_bits-1:0] RES_read_address;		// myip_v1_0 -> RES_RAM. 
 	wire [width-1:0] RES_read_data_out;				// RES_RAM -> myip_v1_0
 
 	/***************************************** STATE *****************************************/
-	reg	Matrix_Start; 							 	// myip_v1_0 -> matrix_multiply_0
-	wire Matrix_Done;							    // matrix_multiply_0 -> myip_v1_0. 
+	reg	Inference_Start; 							 	// myip_v1_0 -> Inference_0
+	wire Inference_Done;							    // Inference_0 -> myip_v1_0. 
 			
 	// Define the states of state machine (one hot encoding)
 	reg [3:0] state;
@@ -153,7 +155,7 @@ module myip_v1_0
 
 				Read_Inputs:
 				begin
-					Matrix_Start <= 0;
+					Inference_Start <= 0;
 
 					// S_AXIS_TVALID comes from testbench (acting as Master)
 					if (S_AXIS_TVALID) begin    // Transaction only occurs if TREADY & TVALID are asserted simultaneously
@@ -209,23 +211,20 @@ module myip_v1_0
 						// RAM_A & RAM_B filled, can begin Matrix Multiplication
 						S_AXIS_TREADY 	<= 0;	// SLAVE->MASTER: Indication from SLAVE to MASTER that SLAVE not accepting data
 						state      		<= Compute;
-						Matrix_Start    <= 1;   // Pulse Matrix_Start to begin 'Compute' phase
+						Inference_Start    <= 1;   // Pulse Inference_Start to begin 'Compute' phase
 						C_write_en <= 0;
 						read_counter <= 0;
 					end
 				end
 
 
-				// Begin 'Compute' phase if Matrix_Start is pulsed
+				// Begin 'Compute' phase if Inference_Start is pulsed
 				Compute:
 				begin
-					Matrix_Start <= 0;             // De-pulse Matrix_Start (we only hold it HIGH for 1 cycle)
+					Inference_Start <= 0;          // De-pulse Inference_Start (we only hold it HIGH for 1 cycle)
 
-					if (Matrix_Done) begin
-						// Finished computing when Matrix Multiply signals DONE
-						//$display("About to change state, %0t", $time);
-						//$strobe("STROBE state, %0t 0h", $time, state);
-						state <= Write_Outputs;    // This will cause Matrix_Start to be deasserted as well
+					if (Inference_Done) begin
+						state <= Write_Outputs;    // This will cause Inference_Start to be deasserted as well
 					end
 
 					// Possible to save a cycle by asserting M_AXIS_TVALID and presenting M_AXIS_TDATA just before going into Write_Outputs state.
@@ -404,19 +403,19 @@ module myip_v1_0
 		.read_data_out(RES_read_data_out)
 	);
 
-	// Multiply-and-accumulate
-	matrix_multiply 
+	// Inference Unit
+	Inference 
 	#(
 		.width(width), 
 		.A_depth_bits(A_depth_bits), 
 		.B_depth_bits(B_depth_bits), 
-		.C_depth_bits(C_depth_bits,)
+		.C_depth_bits(C_depth_bits),
 		.RES_depth_bits(RES_depth_bits) 
-	) matrix_multiply_0
+	) Inference_0
 	(									
 		.clk(ACLK),
-		.Start(Matrix_Start),
-		.Done(Matrix_Done),
+		.Start(Inference_Start),
+		.Done(Inference_Done),
 		
 		.A_read_en(A_read_en),
 		.A_read_address(A_read_address),
