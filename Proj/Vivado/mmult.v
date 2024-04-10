@@ -15,7 +15,8 @@ module mmult
     (
         input clk,
         input mmult_start,
-        output reg mmult_done = 1'b0,
+        output reg mmult_particular_datapoint_done = 1'b0,
+        output reg mmult_all_datapoints_done = 1'b0,    // Note: 1 cycle lag between last particular datapoint being computed, and all_datapoints_done signal being pulsed
         output reg [width-1:0] mmult_results,
 
         input [width-1:0] X_read_data,
@@ -31,7 +32,7 @@ module mmult
     // Traversal along X(mn) and Y(n1) matrices. Note matrices are 1-indexed, but registers below are all 0-indexed.
     reg [$clog2(m):0] X_row_traversal = 0;                          // Traversing along the m rows of X.
     reg [$clog2(n)-1:0] X_column_traversal = 0;                     // Traversing along n rows of X.
-    reg [$clog2(n)-1:0] Y_row_traversal = Y_starting_row_offset;
+    reg [$clog2(n):0] Y_row_traversal = Y_starting_row_offset;
 
     // For X(mn)*Y(n1), each element of X&Y is 8-bit unsigned number (maximal value 255)
     // Therefore when computing X*Y, we need minimally 16-bit unsigned number (to store 255*255)
@@ -51,8 +52,8 @@ module mmult
 
         // Start is pulsed for 1 cycle -> Triggers mmult to run
 		if (mmult_start && !mmult_active) mmult_active <= 1;
-        // mmult is completed -> De-pulse mmult_done signal (It was brought high earlier)
-		if (mmult_done && !mmult_active) mmult_done <= 0;
+        // mmult is completed -> De-pulse mmult_all_datapoints_done signal (It was brought high earlier)
+		//if (mmult_all_datapoints_done && !mmult_active) mmult_all_datapoints_done <= 0;
 
         if (mmult_active == 1) begin
             // Enable reading of RAM
@@ -70,6 +71,7 @@ module mmult
                     //RES_write_en <= 1;
                     //RES_write_address <= which_row;
                     mmult_results <=  (sum + (X_read_data * Y_read_data)) >> 8;
+                    mmult_particular_datapoint_done <= 1;
                     //before_trim <=  sum + X_read_data * Y_read_data;
                     //RES_write_data_in <= (sum + (X_read_data * Y_read_data)) >> 8;    // Divide the FINAL SUM by 256
 
@@ -78,9 +80,10 @@ module mmult
                     which_row <= which_row + 1;
                     sum <= 0;
                 end
-                //else begin
+                else begin
                     //RES_write_en <= 0;
-                //end
+                    mmult_particular_datapoint_done <= 0;
+                end
 
                 // Done with Matrix Multiplication (not just traversing it!)
                 if (which_row == m) begin
@@ -96,7 +99,7 @@ module mmult
                     count_sums <= 0;
                     which_row <= 0;
 
-                    mmult_done <= 1;
+                    mmult_all_datapoints_done <= 1;    // Mantain HIGH
                     mmult_active <= 0;
                 end
             end

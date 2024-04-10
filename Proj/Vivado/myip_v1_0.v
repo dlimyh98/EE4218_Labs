@@ -86,9 +86,6 @@ module myip_v1_0
 	wire C_read_en_1;
 	wire [C_depth_bits-1:0] C_read_address_1;
 	wire [width-1:0] C_read_data_out_1;
-	wire C_read_en_2;
-	wire [C_depth_bits-1:0] C_read_address_2;
-	wire [width-1:0] C_read_data_out_2;
 
 	// RES_RAM does not require two simultaneous reads
 	wire RES_write_en = 0;								
@@ -388,6 +385,7 @@ module myip_v1_0
 		.read_data_out_2(B_read_data_out_2)
 	);
 
+	// We can leave second read port unconnected for C_RAM
 	memory_RAM 
 	#(
 		.width(width), 
@@ -400,10 +398,7 @@ module myip_v1_0
 		.write_data_in(C_write_data_in),
 		.read_en_1(C_read_en_1),    
 		.read_address_1(C_read_address_1),
-		.read_data_out_1(C_read_data_out_1),
-		.read_en_2(C_read_en_2),    
-		.read_address_2(C_read_address_2),
-		.read_data_out_2(C_read_data_out_2)
+		.read_data_out_1(C_read_data_out_1)
 	);
 
 	// We can leave the second read port unconnected for RES_RAM
@@ -453,9 +448,6 @@ module myip_v1_0
 		.C_read_en_1(C_read_en_1),
 		.C_read_address_1(C_read_address_1),
 		.C_read_data_out_1(C_read_data_out_1),
-		.C_read_en_2(C_read_en_2),
-		.C_read_address_2(C_read_address_2),
-		.C_read_data_out_2(C_read_data_out_2),
 		
 		.RES_write_en(RES_write_en),
 		.RES_write_address(RES_write_address),
