@@ -18,7 +18,6 @@
 
 module myip_v1_0 
 	(
-		// DO NOT EDIT BELOW THIS LINE ////////////////////
 		ACLK,
 		ARESETN,
 		S_AXIS_TREADY,
@@ -29,27 +28,23 @@ module myip_v1_0
 		M_AXIS_TDATA,
 		M_AXIS_TLAST,
 		M_AXIS_TREADY
-		// DO NOT EDIT ABOVE THIS LINE ////////////////////
 	);
 
+	/***************************************** I/O *****************************************/
 	input					ACLK;    // Synchronous clock
 	input					ARESETN; // System reset, active low
-	// slave in interface
+	// Slave in interface
 	output	reg				S_AXIS_TREADY;  // Ready to accept data in
 	input	[31 : 0]		S_AXIS_TDATA;   // Data in
 	input					S_AXIS_TLAST;   // Optional data in qualifier
 	input					S_AXIS_TVALID;  // Data in is valid
-	// master out interface
+	// Master out interface
 	output	reg				M_AXIS_TVALID;  // Data out is valid
 	output	wire [31 : 0]	M_AXIS_TDATA;   // Data Out
 	output	reg				M_AXIS_TLAST;   // Optional data out qualifier
 	input					M_AXIS_TREADY;  // Connected slave device is ready to accept data out
 
-//----------------------------------------
-// Implementation Section
-//----------------------------------------
-
-// RAM parameters
+	/***************************************** RAM *****************************************/
 	localparam A_depth_bits = 9;  	// A is a 64x7 matrix
 	localparam B_depth_bits = 4; 	// B is a 8x2 matrix
 	localparam C_depth_bits = 2; 	// C is a 3x1 matrix
@@ -90,8 +85,9 @@ module myip_v1_0
 	reg RES_read_en = 0;  							// myip_v1_0 -> RES_RAM. 
 	reg [RES_depth_bits-1:0] RES_read_address;		// myip_v1_0 -> RES_RAM. 
 	wire [width-1:0] RES_read_data_out;				// RES_RAM -> myip_v1_0
-	
-	reg	Matrix_Start; 							 	// myip_v1_0 -> matrix_multiply_0. To be assigned within myip_v1_0. Possibly reg.
+
+	/***************************************** STATE *****************************************/
+	reg	Matrix_Start; 							 	// myip_v1_0 -> matrix_multiply_0
 	wire Matrix_Done;							    // matrix_multiply_0 -> myip_v1_0. 
 			
 	// Define the states of state machine (one hot encoding)
@@ -108,12 +104,13 @@ module myip_v1_0
 	reg [$clog2(NUMBER_OF_OUTPUT_WORDS):0] write_counter = 0;
 	localparam NUM_CYCLES_FILL_RES_RAM_PIPELINE = 2;
 
+	/***************************************** FSM *****************************************/
    // CAUTION:
    // The sequence in which data are read in and written out should be
    // consistent with the sequence they are written and read in the driver's hw_acc.c file
 
-// STATE MACHINE implemented as a single-always Moore machine
-// a Mealy machine that asserts S_AXIS_TREADY and captures S_AXIS_TDATA etc can save a clock cycle
+	// STATE MACHINE implemented as a single-always Moore machine
+	// a Mealy machine that asserts S_AXIS_TREADY and captures S_AXIS_TDATA etc can save a clock cycle
 	assign M_AXIS_TDATA = RES_read_data_out;
 
 	reg is_deasserted = 1'b1;
@@ -344,7 +341,8 @@ module myip_v1_0
 		end
 	end
 
-
+	/***************************************** INSTANTIATION *****************************************/
+	// RAM
 	memory_RAM 
 	#(
 		.width(width), 
@@ -405,12 +403,14 @@ module myip_v1_0
 		.read_address(RES_read_address),
 		.read_data_out(RES_read_data_out)
 	);
-										
+
+	// Multiply-and-accumulate
 	matrix_multiply 
 	#(
 		.width(width), 
 		.A_depth_bits(A_depth_bits), 
 		.B_depth_bits(B_depth_bits), 
+		.C_depth_bits(C_depth_bits,)
 		.RES_depth_bits(RES_depth_bits) 
 	) matrix_multiply_0
 	(									
@@ -425,6 +425,10 @@ module myip_v1_0
 		.B_read_en(B_read_en),
 		.B_read_address(B_read_address),
 		.B_read_data_out(B_read_data_out),
+
+		.C_read_en(C_read_en),
+		.C_read_address(C_read_address),
+		.C_read_data_out(C_read_data_out),
 		
 		.RES_write_en(RES_write_en),
 		.RES_write_address(RES_write_address),

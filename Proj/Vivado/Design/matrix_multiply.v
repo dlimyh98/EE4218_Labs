@@ -4,30 +4,36 @@ module matrix_multiply
 	#(	parameter width = 8, 			// width is the number of bits per location
 		parameter A_depth_bits = 3, 	// depth is the number of locations (2^number of address bits)
 		parameter B_depth_bits = 2, 
+		parameter C_depth_bits = 2,
 		parameter RES_depth_bits = 1
 	) 
 	(
 		input clk,										
 		input Start,									    // myip_v1_0 -> matrix_multiply_0.
-		output reg Done,									// matrix_multiply_0 -> myip_v1_0. Possibly reg.
+		output reg Done,									// matrix_multiply_0 -> myip_v1_0.
 		
-		output reg A_read_en,  								// matrix_multiply_0 -> A_RAM. Possibly reg.
-		output reg [A_depth_bits-1:0] A_read_address, 		// matrix_multiply_0 -> A_RAM. Possibly reg.
+		output reg A_read_en,  								// matrix_multiply_0 -> A_RAM.
+		output reg [A_depth_bits-1:0] A_read_address, 		// matrix_multiply_0 -> A_RAM. 
 		input [width-1:0] A_read_data_out,				    // A_RAM -> matrix_multiply_0.
 		
-		output reg B_read_en, 								// matrix_multiply_0 -> B_RAM. Possibly reg.
-		output reg [B_depth_bits-1:0] B_read_address, 		// matrix_multiply_0 -> B_RAM. Possibly reg.
+		output reg B_read_en, 								// matrix_multiply_0 -> B_RAM. 
+		output reg [B_depth_bits-1:0] B_read_address, 		// matrix_multiply_0 -> B_RAM. 
 		input [width-1:0] B_read_data_out,				    // B_RAM -> matrix_multiply_0.
+
+		output reg C_read_en, 								// matrix_multiply_0 -> C_RAM. 
+		output reg [C_depth_bits-1:0] C_read_address, 		// matrix_multiply_0 -> C_RAM. 
+		input [width-1:0] C_read_data_out,				    // C_RAM -> matrix_multiply_0.
 		
-		output reg RES_write_en, 							// matrix_multiply_0 -> RES_RAM. Possibly reg.
-		output reg [RES_depth_bits-1:0] RES_write_address, 	// matrix_multiply_0 -> RES_RAM. Possibly reg.
-		output reg [width-1:0] RES_write_data_in 			// matrix_multiply_0 -> RES_RAM. Possibly reg.
+		output reg RES_write_en, 							// matrix_multiply_0 -> RES_RAM. 
+		output reg [RES_depth_bits-1:0] RES_write_address, 	// matrix_multiply_0 -> RES_RAM. 
+		output reg [width-1:0] RES_write_data_in 			// matrix_multiply_0 -> RES_RAM. 
 	);
 
-	localparam NUMBER_OF_A_WORDS = 2**A_depth_bits;
+	localparam NUMBER_OF_A_WORDS = 448;
 	localparam NUMBER_OF_B_WORDS = 2**B_depth_bits;
-	localparam NUMBER_OF_INPUT_WORDS  = NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS;	// Total number of input data.
-	localparam NUMBER_OF_OUTPUT_WORDS = 2**RES_depth_bits;	                    // Total number of output data
+	localparam NUMBER_OF_C_WORDS = 3;
+	localparam NUMBER_OF_INPUT_WORDS  = NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS + NUMBER_OF_C_WORDS;
+	localparam NUMBER_OF_OUTPUT_WORDS = 2**RES_depth_bits;
 
 	// Traversal along A(mxn) and B(nx1) matrices
 	localparam m = 64;                                    // Note matrices 1-indexed
