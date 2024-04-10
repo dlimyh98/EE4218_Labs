@@ -88,7 +88,7 @@ module myip_v1_0
 	wire [width-1:0] C_read_data_out_1;
 
 	// RES_RAM does not require two simultaneous reads
-	wire RES_write_en = 0;								
+	wire RES_write_en;								
 	wire [RES_depth_bits-1:0] RES_write_address;
 	wire [width-1:0] RES_write_data_in;
 	reg RES_read_en;

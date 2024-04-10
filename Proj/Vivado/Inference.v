@@ -30,7 +30,7 @@ module Inference
 		output C_read_en_1,
 		output [C_depth_bits-1:0] C_read_address_1,
 		
-		output reg RES_write_en,
+		output reg RES_write_en = 1'b1,
 		output reg [RES_depth_bits-1:0] RES_write_address,
 		output reg [width-1:0] RES_write_data_in
 	);
@@ -139,6 +139,7 @@ module Inference
 	assign hidden_node_makeshift_RAM[0] = hidden_node1_result;
 	assign hidden_node_makeshift_RAM[1] = hidden_node2_result;
 
+	// Computation of Output Nodes
 	always @(posedge clk) begin
 		// Read from our makeshift RAM, a (1x2) matrix storing hidden node values
 		if (hidden_node_makeshift_RAM_read_en) begin
@@ -154,6 +155,18 @@ module Inference
 		// Signal that ALL datapoints at output node have been outputted
 		if (num_output_nodes_calculated == A_m) begin
 			output_node_all_done <= 1;
+		end
+	end
+
+	// Writing to RES RAM
+	always @ (posedge clk) begin
+
+		if (output_node_particular_done) begin
+			// There's a value that needs to be written to RES_RAM.
+			// Note: RES_RAM write enable is always HIGH
+
+			RES_write_address <= num_output_nodes_calculated;
+			RES_write_data_in <= output_node_result;
 		end
 	end
 
