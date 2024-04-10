@@ -77,12 +77,6 @@ module tb_advanced(
 
         #200 S_AXIS_TVALID <= 1'b0;    // In 2 clock cycles, deassert S_AXIS_TVALID
         #100 S_AXIS_TVALID <= 1'b1;    // In 1 more clock cycle, assert back S_AXIS_TVALID
-
-
-        // Second testcase, M_AXIS_TLAST pulsed at 111050ns for 1st testcase
-        //#111000 S_AXIS_TVALID <= 1'b1;
-        //#200 S_AXIS_TVALID <= 1'b0;
-        //#100 S_AXIS_TVALID <= 1'b1;
     end
 
     /********************** COPROCESSOR AS MASTER, TESTBENCH AS SLAVE **********************/
@@ -90,23 +84,17 @@ module tb_advanced(
         #25                       // Just as main driver pulls reset to low
         M_AXIS_TREADY <= 1'b0;	  // Not ready to receive data from the co-processor yet.   
 
-        // At 53225ns, M_AXIS_TREADY is pulled high in main driver.
+        // At 47.225us, M_AXIS_TREADY is pulled high in main driver.
         // Doesn't mean coprocessor is ready to send (i.e assert M_AXIS_TVALID), since it still has to do Compute
 
-        // Coprocessor enters Write_Output at 104_150ns
-        // Coprocessor raises M_AXIS_TVALID at 2 clock cycles later (104_350), as need to fill pipeline first
-        #104325
+        // Coprocessor enters Write_Output at 93.25us
+        // Coprocessor raises M_AXIS_TVALID at 2 clock cycles later (93.45us), as need to fill pipeline first
+        #93425
 
         #400  // Pulldown CLK's posedge
         M_AXIS_TREADY <= 1'b0;
 
-        #100 M_AXIS_TREADY <= 1'b1;  // pulled back up on CLK's posedge
-
-
-        // Second testcase
-        // M_AXIS_TREADY pulled high by Main Driver (163825ns)
-        //#400 M_AXIS_TREADY <= 1'b0;
-        //#100 M_AXIS_TREADY <= 1'b1;
+        #100 M_AXIS_TREADY <= 1'b1;  // Pulled back up on CLK's posedge
     end
 
 

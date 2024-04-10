@@ -124,7 +124,7 @@ module Inference
 
 	// Output node
 	wire output_node_particular_done;
-	reg output_node_all_done;
+	reg output_node_all_done = 1'b0;
 	wire [width-1:0] output_node_result;
 
 	// Create a makeshift 'RAM', mimicking RAM unit functionality
@@ -155,6 +155,7 @@ module Inference
 		// Signal that ALL datapoints at output node have been outputted
 		if (num_output_nodes_calculated == A_m) begin
 			output_node_all_done <= 1;
+			RES_write_en <= 0;
 		end
 	end
 
@@ -197,24 +198,9 @@ module Inference
 		);
 
 
-	/******************************** Inference Control  ********************************/
-	/*
-	always @(posedge clk) begin
-		// Input signal Start is pulsed for 1 cycle -> Triggers MAC unit to run
-		if (Start && !is_inferencing) is_inferencing <= 1;
-		// MAC unit stopped -> Output signal Done always pulled lowed
-		if (Done && !is_inferencing) Done <= 0;
-
-		// Inference
-		if (is_inferencing == 1) begin
-			
-		end 
-		else begin
-			// We enter here if we are done with matrix multiplication
-			// De-pulse the 'Done' signal that we raised previously
-			Done <= 0;
-		end
+	/******************************** Inference State ********************************/
+	always @ (posedge clk) begin
+		Done <= (output_node_all_done);
 	end
-	*/
 
 endmodule
