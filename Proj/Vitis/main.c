@@ -21,6 +21,7 @@ int main()
     receive_from_realterm(UART_BASEADDR, recv_a_matrix, recv_b_matrix, recv_c_matrix);
     xil_printf("Files received from Realterm\n");
 
+    xil_printf("Kickoff SOFT and HARD calculations\n");
     // 1. Load value in TLR0 to TCR0 (by writing to LOAD0)
     // 2. Clear LOAD0, set ENT0 (to let counter run)
     XTmrCtr_Start(TimerCtrInstancePtr, TIMER_CNTR_0);
@@ -31,59 +32,58 @@ int main()
 	sw_mult_time = XTmrCtr_GetValue(TimerCtrInstancePtr, TIMER_CNTR_0);
 
 
-    //#ifndef HARD_HLS
-        //for (int test_case_cnt = 0; test_case_cnt < NUMBER_OF_TEST_VECTORS; test_case_cnt++) {
-            //int Status;
+    #ifndef HARD_HLS
+        for (int test_case_cnt = 0; test_case_cnt < NUMBER_OF_TEST_VECTORS; test_case_cnt++) {
+            int Status;
 
-            ///*********** TX, Main Memory --> Coprocessor ************/
-            //Status = mm2s_transmit(&AxiDma, test_case_cnt);
-            //if (Status != XST_SUCCESS) {
-                //xil_printf("mm2s TX error\n");
-                //return XST_FAILURE;
-            //} 
-            ///*********** RX, Coprocessor --> Main Memory ************/
-            //Status = s2mm_transmit(&AxiDma, test_case_cnt);
-            //if (Status != XST_SUCCESS) {
-                //xil_printf("s2mm TX error\n");
-                //return XST_FAILURE;
-            //} 
-        //}
-    //#else
-        //// Communicate to Coprocessor IP via AXI-Stream
-        //for (; test_case_cnt < NUMBER_OF_TEST_VECTORS; test_case_cnt++) {
-            ///********************* TX *********************/
-            //if (AXIS_transmit(FifoInstancePtr) != XST_SUCCESS) {
-                //xil_printf("TX error\n");
-                //return XST_FAILURE;
-            //}
+            /*********** TX, Main Memory --> Coprocessor ************/
+            Status = mm2s_transmit(&AxiDma, test_case_cnt);
+            if (Status != XST_SUCCESS) {
+                xil_printf("mm2s TX error\n");
+                return XST_FAILURE;
+            } 
+            /*********** RX, Coprocessor --> Main Memory ************/
+            Status = s2mm_transmit(&AxiDma, test_case_cnt);
+            if (Status != XST_SUCCESS) {
+                xil_printf("s2mm TX error\n");
+                return XST_FAILURE;
+            } 
+        }
+    #else
+        // Communicate to Coprocessor IP via AXI-Stream
+        for (; test_case_cnt < NUMBER_OF_TEST_VECTORS; test_case_cnt++) {
+            /********************* TX *********************/
+            if (AXIS_transmit(FifoInstancePtr) != XST_SUCCESS) {
+                xil_printf("TX error\n");
+                return XST_FAILURE;
+            }
 
-            //// Interrupt mode: Do other work while waiting for TX completion
-            //#ifndef AXI_STREAM_POLLING_MODE
-                //while (!TX_done) {
-                    //asm("nop");
-                    ////xil_printf("Busy TX\n");
-                //}
-            //#endif
+            // Interrupt mode: Do other work while waiting for TX completion
+            #ifndef AXI_STREAM_POLLING_MODE
+                while (!TX_done) {
+                    asm("nop");
+                    //xil_printf("Busy TX\n");
+                }
+            #endif
 
-            ///********************* RX *********************/
-            //// Polling mode: Polling read of RDRO register
-            //// Interrupt mode: Only read RDRO register when RC flag is raised
-            //if (AXIS_receive(FifoInstancePtr) != XST_SUCCESS) {
-                //xil_printf("RX error\n");
-                //return XST_FAILURE;
-            //}
-        //}
-    //#endif
+            /********************* RX *********************/
+            // Polling mode: Polling read of RDRO register
+            // Interrupt mode: Only read RDRO register when RC flag is raised
+            if (AXIS_receive(FifoInstancePtr) != XST_SUCCESS) {
+                xil_printf("RX error\n");
+                return XST_FAILURE;
+            }
+        }
+    #endif
 
 
-	//hw_mult_time = XTmrCtr_GetValue(TimerCtrInstancePtr, TIMER_CNTR_0) - sw_mult_time;
-    //// TODO: For more accuracy, we can reset Timer0 before counting for HW mult
-    //xil_printf("SW mult is %d\n", sw_mult_time);
-    //xil_printf("HW mult is %d", hw_mult_time);
+	hw_mult_time = XTmrCtr_GetValue(TimerCtrInstancePtr, TIMER_CNTR_0) - sw_mult_time;
+    // TODO: For more accuracy, we can reset Timer0 before counting for HW mult
+    xil_printf("SW mult is %d\n", sw_mult_time);
+    xil_printf("HW mult is %d", hw_mult_time);
 
-    //// Verify results
-    //return (verify());
-    return 0;
+    // Verify results
+    return (verify());
 }
 
 
@@ -211,16 +211,29 @@ int init_interrupts(XScuGic* IntC, XLlFifo* FifoInstancePtr, XTmrCtr* TimerCtrIn
 
 /*********************************** AXI-Stream TX,RX *********************************************/
 int AXIS_transmit(XLlFifo* FifoInstancePtr) {
-    int word_cnt = 0;
+    // Writing into the FIFO Transmit Port Buffer (Input to PL Coprocessor)
+    for (int word_cnt=0; word_cnt < NUMBER_OF_INPUT_WORDS; word_cnt++) {
 
-    /******************** Input to Coprocessor : Transmit the Data Stream ***********************/
-    //xil_printf(" Transmitting Data for test case %d ... \r\n", test_case_cnt);
+        // We set AXIS FIFO depth to 1024 (words) in Vivado, so it can comfortably fit NUMBER_OF_INPUT_WORDS
+        if( XLlFifo_iTxVacancy(FifoInstancePtr) ) {
+            int offset;
 
-    // Writing into the FIFO Transmit Port Buffer
-    for (word_cnt=0; word_cnt < NUMBER_OF_INPUT_WORDS; word_cnt++) {
-        if( XLlFifo_iTxVacancy(FifoInstancePtr) ){
-            // We set AXIS FIFO depth to 1024 (words) in Vivado, so it can comfortably fit NUMBER_OF_INPUT_WORDS
-            XLlFifo_TxPutWord(FifoInstancePtr, HARD_input_memory[word_cnt+test_case_cnt*NUMBER_OF_INPUT_WORDS]);
+            if (0 <= word_cnt 
+                && word_cnt < (A_NUM_ROWS*A_NUM_COLS)) {
+                    // Send over 'A' matrix
+                    XLlFifo_TxPutWord(FifoInstancePtr, (int)recv_a_matrix[word_cnt + test_case_cnt*NUMBER_OF_INPUT_WORDS]);
+            }
+            else if ((A_NUM_ROWS*A_NUM_COLS) <= word_cnt 
+                    && word_cnt < ((A_NUM_ROWS*A_NUM_COLS) + (B_NUM_ROWS*B_NUM_COLS))) {
+                        // Send over 'B' matrix
+                        offset = word_cnt - (A_NUM_ROWS*A_NUM_COLS);
+                        XLlFifo_TxPutWord(FifoInstancePtr, (int)recv_b_matrix[offset + test_case_cnt*NUMBER_OF_INPUT_WORDS]);
+            }
+            else {
+                // Send over 'C' matrix
+                offset = word_cnt - (A_NUM_ROWS*A_NUM_COLS) - (B_NUM_ROWS*B_NUM_COLS);
+                XLlFifo_TxPutWord(FifoInstancePtr, (int)recv_b_matrix[offset + test_case_cnt*NUMBER_OF_INPUT_WORDS]);
+            }
         }
     }
 
@@ -291,6 +304,61 @@ int AXIS_receive(XLlFifo* FifoInstancePtr) {
     #endif
 }
 
+/********************************** HARD *********************************************/
+
+/********************************** SOFT *********************************************/
+void SOFT_processing(char* recv_a_matrix, char* recv_b_matrix, char* recv_c_matrix, 
+                    u8 (*SOFT_hidden_layer_neurons)[A_NUM_ROWS], u8* SOFT_output_layer_neurons) {
+    /**************************** COMPUTE HIDDEN LAYER ************************************/
+    // Iterate through 'A_NUM_ROWS' datapoints
+    for (int i = 0; i < A_NUM_ROWS; i++) {
+
+        // Weight of hidden layer neuron is maximally ((255*255)*(NUM_A_COLS) + 255)
+        int sum_1 = 0;  // First neuron of hidden layer
+        int sum_2 = 0;  // Second neuron of hidden layer
+
+        // Iterate through 'A_NUM_COLS' features that EACH datapoint has
+        for (int j = 0; j < A_NUM_COLS; j++) {
+            // Multiply each datapoint feature with the corresponding edge weights
+            // Note that we disregard the first row of recv_b_matrix, since that is bias term (for both neurons in the hidden layer), which is NOT multiplied to any feature
+            char datapoint = recv_a_matrix[(i*A_NUM_COLS) + (j)];
+            sum_1 += datapoint * recv_b_matrix[B_DISREGARD_BIAS_TERM + (j*NUM_NEURONS_HIDDEN_LAYER)];                              // First neuron of hidden layer
+            sum_2 += datapoint * recv_b_matrix[B_DISREGARD_BIAS_TERM + B_OFFSET_FOR_SECOND_NEURON + (j*NUM_NEURONS_HIDDEN_LAYER)]; // Second neuron of hidden layer
+        }
+
+        // Include the bias terms now
+        sum_1 += recv_b_matrix[HIDDEN_LAYER_FIRST_NEURON];
+        sum_2 += recv_b_matrix[HIDDEN_LAYER_SECOND_NEURON];
+
+        // Restore precision, then store the computed weight of our hidden layer neuron
+        SOFT_hidden_layer_neurons[HIDDEN_LAYER_FIRST_NEURON][i] = (sum_1 >> NUM_FRACTIONAL_BITS);
+        SOFT_hidden_layer_neurons[HIDDEN_LAYER_SECOND_NEURON][i] = (sum_2 >> NUM_FRACTIONAL_BITS);
+    }
+
+    /**************************** COMPUTE OUTPUT LAYER ************************************/
+    // Iterate through 'A_NUM_ROWS' datapoints from BOTH neurons simultaneously
+    for (int i = 0; i < A_NUM_ROWS; i++) {
+
+        int sum = 0;
+
+        // Iterate through the weights of output layer, ignoring bias term
+        for (int j = 0; j < NUM_WEIGHTS_HIDDEN_TO_OUTPUT-1; j++) {
+            sum += sigmoid_function(SOFT_hidden_layer_neurons[j][i]) * recv_c_matrix[C_DISREGARD_BIAS_TERM + j];
+        }
+
+        // Include the bias term
+        sum += recv_c_matrix[0];
+
+        // Restore precision, then store the computed weight of our output neuron
+        // Note output neuron has linear activation function
+        SOFT_output_layer_neurons[i] =  (sum >> NUM_FRACTIONAL_BITS);
+    }
+}
+
+u8 sigmoid_function(u8 sigmoid_LUT_index) {
+    return sigmoid_LUT[sigmoid_LUT_index];
+}
+
 /********************************** Generic *********************************************/
 int initialization() {
     if (init_UART(&Uart_Ps) == XST_FAILURE) {
@@ -345,56 +413,4 @@ int verify() {
 
     xil_printf("Verification success\n");
     return XST_SUCCESS;
-}
-
-void SOFT_processing(char* recv_a_matrix, char* recv_b_matrix, char* recv_c_matrix, 
-                    u8 (*SOFT_hidden_layer_neurons)[A_NUM_ROWS], u8* SOFT_output_layer_neurons) {
-    /**************************** COMPUTE HIDDEN LAYER ************************************/
-    // Iterate through 'A_NUM_ROWS' datapoints
-    for (int i = 0; i < A_NUM_ROWS; i++) {
-
-        // Weight of hidden layer neuron is maximally ((255*255)*(NUM_A_COLS) + 255)
-        int sum_1 = 0;  // First neuron of hidden layer
-        int sum_2 = 0;  // Second neuron of hidden layer
-
-        // Iterate through 'A_NUM_COLS' features that EACH datapoint has
-        for (int j = 0; j < A_NUM_COLS; j++) {
-            // Multiply each datapoint feature with the corresponding edge weights
-            // Note that we disregard the first row of recv_b_matrix, since that is bias term (for both neurons in the hidden layer), which is NOT multiplied to any feature
-            char datapoint = recv_a_matrix[(i*A_NUM_COLS) + (j)];
-            sum_1 += datapoint * recv_b_matrix[B_DISREGARD_BIAS_TERM + (j*NUM_NEURONS_HIDDEN_LAYER)];                              // First neuron of hidden layer
-            sum_2 += datapoint * recv_b_matrix[B_DISREGARD_BIAS_TERM + B_OFFSET_FOR_SECOND_NEURON + (j*NUM_NEURONS_HIDDEN_LAYER)]; // Second neuron of hidden layer
-        }
-
-        // Include the bias terms now
-        sum_1 += recv_b_matrix[HIDDEN_LAYER_FIRST_NEURON];
-        sum_2 += recv_b_matrix[HIDDEN_LAYER_SECOND_NEURON];
-
-        // Restore precision, then store the computed weight of our hidden layer neuron
-        SOFT_hidden_layer_neurons[HIDDEN_LAYER_FIRST_NEURON][i] = (sum_1 >> NUM_FRACTIONAL_BITS);
-        SOFT_hidden_layer_neurons[HIDDEN_LAYER_SECOND_NEURON][i] = (sum_2 >> NUM_FRACTIONAL_BITS);
-    }
-
-    /**************************** COMPUTE OUTPUT LAYER ************************************/
-    // Iterate through 'A_NUM_ROWS' datapoints from BOTH neurons simultaneously
-    for (int i = 0; i < A_NUM_ROWS; i++) {
-
-        int sum = 0;
-
-        // Iterate through the weights of output layer, ignoring bias term
-        for (int j = 0; j < NUM_WEIGHTS_HIDDEN_TO_OUTPUT-1; j++) {
-            sum += sigmoid_function(SOFT_hidden_layer_neurons[j][i]) * recv_c_matrix[C_DISREGARD_BIAS_TERM + j];
-        }
-
-        // Include the bias term
-        sum += recv_c_matrix[0];
-
-        // Restore precision, then store the computed weight of our output neuron
-        // Note output neuron has linear activation function
-        SOFT_output_layer_neurons[i] =  (sum >> NUM_FRACTIONAL_BITS);
-    }
-}
-
-u8 sigmoid_function(u8 sigmoid_LUT_index) {
-    return sigmoid_LUT[sigmoid_LUT_index];
 }

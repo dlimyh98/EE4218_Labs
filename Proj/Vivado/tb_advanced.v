@@ -8,12 +8,12 @@ module tb_advanced(
     reg                          ARESETN;     // System reset, active low
     // slave in interface
     wire                         S_AXIS_TREADY;  // Ready to accept data in
-    reg      [31 : 0]            S_AXIS_TDATA;   // Data in
+    reg [31 : 0]                 S_AXIS_TDATA;   // Data in
     reg                          S_AXIS_TLAST;   // Optional data in qualifier
     reg                          S_AXIS_TVALID;  // Data in is valid
     // master out interface
     wire                         M_AXIS_TVALID;  // Data out is valid
-    wire     [31 : 0]            M_AXIS_TDATA;   // Data out
+    wire [31 : 0]                M_AXIS_TDATA;   // Data out
     wire                         M_AXIS_TLAST;   // Optional data out qualifier
     reg                          M_AXIS_TREADY;  // Connected slave device is ready to accept data out
     
@@ -30,16 +30,20 @@ module tb_advanced(
                 .M_AXIS_TREADY(M_AXIS_TREADY)
 	);
 
-	localparam A_depth_bits = 9;  	// A is a 64x8 matrix
-	localparam B_depth_bits = 3; 	// B is a 8x1 matrix
+	localparam A_depth_bits = 9;  	// A is a 64x7 matrix
+	localparam B_depth_bits = 4; 	// B is a 8x2 matrix
+	localparam C_depth_bits = 2; 	// C is a 3x1 matrix
 	localparam RES_depth_bits = 6;	// RES is a 64x1 matrix
-	localparam width = 8;			// all 8-bit data
-	localparam NUMBER_OF_A_WORDS = 2**A_depth_bits;
-	localparam NUMBER_OF_B_WORDS = 2**B_depth_bits;
-	localparam NUMBER_OF_INPUT_WORDS  = NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS;	// Total number of input data.
-	localparam NUMBER_OF_OUTPUT_WORDS = 2**RES_depth_bits;	                    // Total number of output data
+	localparam width = 8;			// PS sends 32bit data along AXI-4, but the 'underlying' data is actually 8bit
 
-	localparam NUMBER_OF_TEST_VECTORS  = 2;  // number of such test vectors (cases)
+	localparam NUMBER_OF_A_WORDS = 448;
+	localparam NUMBER_OF_B_WORDS = 2**B_depth_bits;
+	localparam NUMBER_OF_C_WORDS = 3;
+
+	localparam NUMBER_OF_INPUT_WORDS  = NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS + NUMBER_OF_C_WORDS;	// Total number of input data.
+	localparam NUMBER_OF_OUTPUT_WORDS = 2**RES_depth_bits;	                    					// Total number of output data
+
+	localparam NUMBER_OF_TEST_VECTORS  = 1;  // number of such test vectors (cases)
 	reg [width-1:0] test_input_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_INPUT_WORDS-1];
 	reg [width-1:0] test_result_expected_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS-1];
 	reg [width-1:0] result_memory [0:NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS-1];    // same size as test_result_expected_memory
@@ -64,7 +68,7 @@ module tb_advanced(
         S_AXIS_TLAST <= 1'b0; 	  // MASTER->SLAVE: not required unless we are dealing with an unknown number of inputs. 
                                     // Ignored by the coprocessor. We will be asserting it correctly anyway
         //S_AXIS_TREADY <= 1'b0;  // SLAVE->MASTER: Slave is not ready to accept data yet
-                                    // For our implementation, Slave asserts TREADY when it Slave gets TVALID==1 from Master
+                                    // For our implementation, Slave asserts TREADY when Slave gets TVALID==1 from Master
                                     // Note : This is not really how AXIS works (Slave can be ready without indication from Master)
 
         #125    // Pulled up on clock edge (FAILS)
@@ -76,9 +80,9 @@ module tb_advanced(
 
 
         // Second testcase, M_AXIS_TLAST pulsed at 111050ns for 1st testcase
-        #111000 S_AXIS_TVALID <= 1'b1;
-        #200 S_AXIS_TVALID <= 1'b0;
-        #100 S_AXIS_TVALID <= 1'b1;
+        //#111000 S_AXIS_TVALID <= 1'b1;
+        //#200 S_AXIS_TVALID <= 1'b0;
+        //#100 S_AXIS_TVALID <= 1'b1;
     end
 
     /********************** COPROCESSOR AS MASTER, TESTBENCH AS SLAVE **********************/
@@ -101,8 +105,8 @@ module tb_advanced(
 
         // Second testcase
         // M_AXIS_TREADY pulled high by Main Driver (163825ns)
-        #400 M_AXIS_TREADY <= 1'b0;
-        #100 M_AXIS_TREADY <= 1'b1;
+        //#400 M_AXIS_TREADY <= 1'b0;
+        //#100 M_AXIS_TREADY <= 1'b1;
     end
 
 
