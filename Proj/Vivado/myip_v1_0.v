@@ -60,33 +60,43 @@ module myip_v1_0
 	localparam NUMBER_OF_INPUT_WORDS  = NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS + NUMBER_OF_C_WORDS;	// Total number of input data.
 	localparam NUMBER_OF_OUTPUT_WORDS = 2**RES_depth_bits;	                    					// Total number of output data
 	
-	reg A_write_en = 0;							// myip_v1_0 -> A_RAM.
-	reg	[A_depth_bits-1:0] A_write_address;		// myip_v1_0 -> A_RAM.
-	reg	[width-1:0] A_write_data_in;			// myip_v1_0 -> A_RAM.
-	wire A_read_en;								// Inference_0 -> A_RAM.
-	wire [A_depth_bits-1:0] A_read_address;		// Inference_0 -> A_RAM.
-	wire [width-1:0] A_read_data_out;			// A_RAM -> Inference_0.
+	reg A_write_en = 0;								
+	reg	[A_depth_bits-1:0] A_write_address;
+	reg	[width-1:0] A_write_data_in;
+	wire A_read_en_1;
+	wire [A_depth_bits-1:0] A_read_address_1;
+	wire [width-1:0] A_read_data_out_1;
+	wire A_read_en_2;
+	wire [A_depth_bits-1:0] A_read_address_2;
+	wire [width-1:0] A_read_data_out_2;
 
-	reg	B_write_en = 0;					 		// myip_v1_0 -> B_RAM.
-	reg	[B_depth_bits-1:0] B_write_address;		// myip_v1_0 -> B_RAM.
-	reg	[width-1:0] B_write_data_in;			// myip_v1_0 -> B_RAM.
-	wire B_read_en;								// Inference_0 -> B_RAM.
-	wire [B_depth_bits-1:0] B_read_address;		// Inference_0 -> B_RAM.
-	wire [width-1:0] B_read_data_out;			// B_RAM -> Inference_0.
+	reg B_write_en = 0;								
+	reg	[B_depth_bits-1:0] B_write_address;
+	reg	[width-1:0] B_write_data_in;
+	wire B_read_en_1;
+	wire [B_depth_bits-1:0] B_read_address_1;
+	wire [width-1:0] B_read_data_out_1;
+	wire B_read_en_2;
+	wire [B_depth_bits-1:0] B_read_address_2;
+	wire [width-1:0] B_read_data_out_2;
 
-	reg	C_write_en = 0;					 		// myip_v1_0 -> C_RAM.
-	reg	[C_depth_bits-1:0] C_write_address;		// myip_v1_0 -> C_RAM.
-	reg	[width-1:0] C_write_data_in;			// myip_v1_0 -> C_RAM.
-	wire C_read_en;								// Inference_0 -> C_RAM.
-	wire [C_depth_bits-1:0] C_read_address;		// Inference_0 -> C_RAM.
-	wire [width-1:0] C_read_data_out;			// C_RAM -> Inference_0.
+	reg C_write_en = 0;								
+	reg	[C_depth_bits-1:0] C_write_address;
+	reg	[width-1:0] C_write_data_in;
+	wire C_read_en_1;
+	wire [C_depth_bits-1:0] C_read_address_1;
+	wire [width-1:0] C_read_data_out_1;
+	wire C_read_en_2;
+	wire [C_depth_bits-1:0] C_read_address_2;
+	wire [width-1:0] C_read_data_out_2;
 
-	wire RES_write_en;								// Inference_0 -> RES_RAM.
-	wire [RES_depth_bits-1:0] RES_write_address;	// Inference_0 -> RES_RAM.
-	wire [width-1:0] RES_write_data_in;				// Inference_0 -> RES_RAM.
-	reg RES_read_en = 0;  							// myip_v1_0 -> RES_RAM. 
-	reg [RES_depth_bits-1:0] RES_read_address;		// myip_v1_0 -> RES_RAM. 
-	wire [width-1:0] RES_read_data_out;				// RES_RAM -> myip_v1_0
+	// RES_RAM does not require two simultaneous reads
+	wire RES_write_en = 0;								
+	wire [RES_depth_bits-1:0] RES_write_address;
+	wire [width-1:0] RES_write_data_in;
+	reg RES_read_en;
+	reg [RES_depth_bits-1:0] RES_read_address;
+	wire [width-1:0] RES_read_data_out;
 
 	/***************************************** STATE *****************************************/
 	reg	Inference_Start; 							 	// myip_v1_0 -> Inference_0
@@ -352,12 +362,14 @@ module myip_v1_0
 		.write_en(A_write_en),
 		.write_address(A_write_address),
 		.write_data_in(A_write_data_in),
-		.read_en(A_read_en),    
-		.read_address(A_read_address),
-		.read_data_out(A_read_data_out)
+		.read_en_1(A_read_en_1),    
+		.read_address_1(A_read_address_1),
+		.read_data_out_1(A_read_data_out_1),
+		.read_en_2(A_read_en_2),    
+		.read_address_2(A_read_address_2),
+		.read_data_out_2(A_read_data_out_2)
 	);
-										
-										
+
 	memory_RAM 
 	#(
 		.width(width), 
@@ -368,9 +380,12 @@ module myip_v1_0
 		.write_en(B_write_en),
 		.write_address(B_write_address),
 		.write_data_in(B_write_data_in),
-		.read_en(B_read_en),    
-		.read_address(B_read_address),
-		.read_data_out(B_read_data_out)
+		.read_en_1(B_read_en_1),    
+		.read_address_1(B_read_address_1),
+		.read_data_out_1(B_read_data_out_1),
+		.read_en_2(B_read_en_2),    
+		.read_address_2(B_read_address_2),
+		.read_data_out_2(B_read_data_out_2)
 	);
 
 	memory_RAM 
@@ -383,11 +398,15 @@ module myip_v1_0
 		.write_en(C_write_en),
 		.write_address(C_write_address),
 		.write_data_in(C_write_data_in),
-		.read_en(C_read_en),    
-		.read_address(C_read_address),
-		.read_data_out(C_read_data_out)
+		.read_en_1(C_read_en_1),    
+		.read_address_1(C_read_address_1),
+		.read_data_out_1(C_read_data_out_1),
+		.read_en_2(C_read_en_2),    
+		.read_address_2(C_read_address_2),
+		.read_data_out_2(C_read_data_out_2)
 	);
-										
+
+	// We can leave the second read port unconnected for RES_RAM
 	memory_RAM 
 	#(
 		.width(width), 
@@ -398,9 +417,9 @@ module myip_v1_0
 		.write_en(RES_write_en),
 		.write_address(RES_write_address),
 		.write_data_in(RES_write_data_in),
-		.read_en(RES_read_en),    
-		.read_address(RES_read_address),
-		.read_data_out(RES_read_data_out)
+		.read_en_1(RES_read_en),    
+		.read_address_1(RES_read_address),
+		.read_data_out_1(RES_read_data_out)
 	);
 
 	// Inference Unit
@@ -417,17 +436,26 @@ module myip_v1_0
 		.Start(Inference_Start),
 		.Done(Inference_Done),
 		
-		.A_read_en(A_read_en),
-		.A_read_address(A_read_address),
-		.A_read_data_out(A_read_data_out),
-		
-		.B_read_en(B_read_en),
-		.B_read_address(B_read_address),
-		.B_read_data_out(B_read_data_out),
+		.A_read_en_1(A_read_en_1),
+		.A_read_address_1(A_read_address_1),
+		.A_read_data_out_1(A_read_data_out_1),
+		.A_read_en_2(A_read_en_2),
+		.A_read_address_2(A_read_address_2),
+		.A_read_data_out_2(A_read_data_out_2),
 
-		.C_read_en(C_read_en),
-		.C_read_address(C_read_address),
-		.C_read_data_out(C_read_data_out),
+		.B_read_en_1(B_read_en_1),
+		.B_read_address_1(B_read_address_1),
+		.B_read_data_out_1(B_read_data_out_1),
+		.B_read_en_2(B_read_en_2),
+		.B_read_address_2(B_read_address_2),
+		.B_read_data_out_2(B_read_data_out_2),
+
+		.C_read_en_1(C_read_en_1),
+		.C_read_address_1(C_read_address_1),
+		.C_read_data_out_1(C_read_data_out_1),
+		.C_read_en_2(C_read_en_2),
+		.C_read_address_2(C_read_address_2),
+		.C_read_data_out_2(C_read_data_out_2),
 		
 		.RES_write_en(RES_write_en),
 		.RES_write_address(RES_write_address),
