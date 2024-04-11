@@ -31,24 +31,25 @@ X = [44,90,0,0,24,81,22;159,250,140,176,121,183,138;
 153,170,150,125,152,171,166;86,155,136,41,36,131,63;
 138,160,104,119,149,124,100;19,56,140,139,217,161,51];
 
-% Remember that bias terms (first row) is ignored
+% Remember that bias terms (first row) is ignored for mmult
+hidden_weights_biases = [26,6];
 hidden_weights_neuron_one = [25;31;29;22;1;11;26];
-
-% Remember that bias terms (first row) is ignored
 hidden_weights_neuron_two = [18;6;26;1;28;9;45];
 
 
 % Hidden Layer
-hidden_neuron_one = fix((X*hidden_weights_neuron_one) / 256);
-hidden_neuron_two = fix((X*hidden_weights_neuron_two) / 256);
+hidden_neuron_one = fix( ((X*hidden_weights_neuron_one) + hidden_weights_biases(1)) / 256);
+hidden_neuron_two = fix( ((X*hidden_weights_neuron_two) + hidden_weights_biases(2)) / 256);
 hidden_layer_neurons = [hidden_neuron_one hidden_neuron_two];
 
 
-% Remember that bias terms (first row) is ignored
+% Remember that bias term (first row) is ignored
+output_bias = 80;
 output_weights = [50;200];
 
 % Output Layer, transpose to view easier
-output_layer_neuron = transpose(fix((hidden_layer_neurons*output_weights) / 256))
+output_layer_neuron = fix( ((hidden_layer_neurons*output_weights) + output_bias) / 256);
+transpose(output_layer_neuron)
 
 
 

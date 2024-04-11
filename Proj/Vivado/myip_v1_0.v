@@ -95,6 +95,10 @@ module myip_v1_0
 	reg [RES_depth_bits-1:0] RES_read_address;
 	wire [width-1:0] RES_read_data_out;
 
+	// Biases
+	reg [width-1:0] hidden_layer_biases [0:1];
+	reg [width-1:0] output_layer_bias;
+
 	/***************************************** STATE *****************************************/
 	reg	Inference_Start; 							 	// myip_v1_0 -> Inference_0
 	wire Inference_Done;							    // Inference_0 -> myip_v1_0. 
@@ -181,23 +185,33 @@ module myip_v1_0
 					if (S_AXIS_TVALID && S_AXIS_TREADY) begin
 						// Read and store values into RAM (RAM_A & RAM_B) first
 						if (read_counter < NUMBER_OF_A_WORDS) begin
-							// Incoming data belongs to 'A' matrix
+							// Incoming data belongs to 'A' matrix; Datapoints and features
 							A_write_en <= 1;
 							A_write_address <= read_counter;
 							A_write_data_in <= S_AXIS_TDATA[width-1:0];
 						end 
 						else if (NUMBER_OF_A_WORDS <= read_counter
 								&& read_counter < (NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS)) begin
-							// Incoming data belongs to 'B' matrix
+							// Incoming data belongs to 'B' matrix; Hidden layer weights
 							B_write_en <= 1; A_write_en <= 0;
 							B_write_address <= read_counter - NUMBER_OF_A_WORDS;
 							B_write_data_in <= S_AXIS_TDATA[width-1:0];
+
+							// Store the biases
+							if (read_counter == NUMBER_OF_A_WORDS) 
+								hidden_layer_biases[0] <= S_AXIS_TDATA[width-1:0];
+							else if (read_counter == NUMBER_OF_A_WORDS+1)
+								hidden_layer_biases[1] <= S_AXIS_TDATA[width-1:0];
 						end
 						else begin
-							// Incoming data belongs to 'C' matrix
+							// Incoming data belongs to 'C' matrix; Output layer weights
 							C_write_en <= 1; B_write_en <= 0; A_write_en <= 0;
 							C_write_address <= read_counter - NUMBER_OF_A_WORDS - NUMBER_OF_B_WORDS;
 							C_write_data_in <= S_AXIS_TDATA[width-1:0];
+
+							// Store the bias
+							if (read_counter == NUMBER_OF_A_WORDS + NUMBER_OF_B_WORDS) 
+								output_layer_bias <= S_AXIS_TDATA[width-1:0];
 						end
 
 						// Still continue filling RAM_A/RAM_B/RAM_C
@@ -430,6 +444,10 @@ module myip_v1_0
 		.clk(ACLK),
 		.Start(Inference_Start),
 		.Done(Inference_Done),
+
+		.hidden_layer_bias_one(hidden_layer_biases[0]),
+		.hidden_layer_bias_two(hidden_layer_biases[1]),
+		.output_layer_bias(output_layer_bias),
 		
 		.A_read_en_1(A_read_en_1),
 		.A_read_address_1(A_read_address_1),

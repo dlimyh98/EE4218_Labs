@@ -18,7 +18,7 @@ int main()
 
     // Accept files from UART, store data into memory
     xil_printf("Ready to accept files from Realterm\n");
-    receive_from_realterm(UART_BASEADDR, recv_a_matrix, recv_b_matrix, recv_c_matrix);
+    receive_from_realterm(UART_BASEADDR, recv_a_matrix, recv_b_matrix, recv_c_matrix, HARD_input_memory);
     xil_printf("Files received from Realterm\n");
 
     xil_printf("Kickoff SOFT and HARD calculations\n");
@@ -314,14 +314,14 @@ void SOFT_processing(char* recv_a_matrix, char* recv_b_matrix, char* recv_c_matr
     for (int i = 0; i < A_NUM_ROWS; i++) {
 
         // Weight of hidden layer neuron is maximally ((255*255)*(NUM_A_COLS) + 255)
-        int sum_1 = 0;  // First neuron of hidden layer
-        int sum_2 = 0;  // Second neuron of hidden layer
+        u32 sum_1 = 0;  // First neuron of hidden layer
+        u32 sum_2 = 0;  // Second neuron of hidden layer
 
         // Iterate through 'A_NUM_COLS' features that EACH datapoint has
         for (int j = 0; j < A_NUM_COLS; j++) {
             // Multiply each datapoint feature with the corresponding edge weights
             // Note that we disregard the first row of recv_b_matrix, since that is bias term (for both neurons in the hidden layer), which is NOT multiplied to any feature
-            char datapoint = recv_a_matrix[(i*A_NUM_COLS) + (j)];
+            u8 datapoint = recv_a_matrix[(i*A_NUM_COLS) + (j)];
             sum_1 += datapoint * recv_b_matrix[B_DISREGARD_BIAS_TERM + (j*NUM_NEURONS_HIDDEN_LAYER)];                              // First neuron of hidden layer
             sum_2 += datapoint * recv_b_matrix[B_DISREGARD_BIAS_TERM + B_OFFSET_FOR_SECOND_NEURON + (j*NUM_NEURONS_HIDDEN_LAYER)]; // Second neuron of hidden layer
         }
@@ -339,11 +339,12 @@ void SOFT_processing(char* recv_a_matrix, char* recv_b_matrix, char* recv_c_matr
     // Iterate through 'A_NUM_ROWS' datapoints from BOTH neurons simultaneously
     for (int i = 0; i < A_NUM_ROWS; i++) {
 
-        int sum = 0;
+        u32 sum = 0;
 
         // Iterate through the weights of output layer, ignoring bias term
         for (int j = 0; j < NUM_WEIGHTS_HIDDEN_TO_OUTPUT-1; j++) {
-            sum += sigmoid_function(SOFT_hidden_layer_neurons[j][i]) * recv_c_matrix[C_DISREGARD_BIAS_TERM + j];
+            sum += SOFT_hidden_layer_neurons[j][i] * recv_c_matrix[C_DISREGARD_BIAS_TERM + j];
+            //sum += sigmoid_function(SOFT_hidden_layer_neurons[j][i]) * recv_c_matrix[C_DISREGARD_BIAS_TERM + j];
         }
 
         // Include the bias term

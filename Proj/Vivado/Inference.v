@@ -12,6 +12,10 @@ module Inference
 		input Start,					    
 		output reg Done,
 
+		input [width-1:0] hidden_layer_bias_one,
+		input [width-1:0] hidden_layer_bias_two,
+		input [width-1:0] output_layer_bias,
+
 		input [width-1:0] A_read_data_out_1,
 		input [width-1:0] A_read_data_out_2,
 		output A_read_en_1,
@@ -62,6 +66,7 @@ module Inference
 		(
 			.clk(clk),
 			.mmult_start(Start),
+			.mmult_bias_term(hidden_layer_bias_one),
 			.mmult_particular_datapoint_done(hidden_node1_particular_done),
 			.mmult_all_datapoints_done(hidden_node1_all_done),
 			.mmult_results(hidden_node1_result),
@@ -93,6 +98,7 @@ module Inference
 		(
 			.clk(clk),
 			.mmult_start(Start),
+			.mmult_bias_term(hidden_layer_bias_two),
 			.mmult_particular_datapoint_done(hidden_node2_particular_done),
 			.mmult_all_datapoints_done(hidden_node2_all_done),
 			.mmult_results(hidden_node2_result),
@@ -184,6 +190,7 @@ module Inference
 		(
 			.clk(clk),
 			.mmult_start(hidden_node_particular_done),
+			.mmult_bias_term(output_layer_bias),
 			.mmult_particular_datapoint_done(output_node_particular_done),
 			//.mmult_all_datapoints_done(),
 			.mmult_results(output_node_result),

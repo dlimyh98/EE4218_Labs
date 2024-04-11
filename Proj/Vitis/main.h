@@ -2,7 +2,7 @@
 // Choose between 
 //  - AXI-DMA (Polling) connected HDL; (HARD_HDL)
 //  - AXI-Stream (Interrupt) connected HLS (HARD_HLS)
-#define HARD_HLS
+//#define HARD_HLS
 
 #define NUM_FRACTIONAL_BITS 8
 #define NUM_WEIGHTS_INPUT_TO_HIDDEN 8    // 7(weight connections) + 1(bias)

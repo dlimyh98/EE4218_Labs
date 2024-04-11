@@ -15,6 +15,7 @@ module mmult
     (
         input clk,
         input mmult_start,
+        input [width-1:0] mmult_bias_term,
         output reg mmult_particular_datapoint_done = 1'b0,
         output reg mmult_all_datapoints_done = 1'b0,    // Note: 1 cycle lag between last particular datapoint being computed, and all_datapoints_done signal being pulsed
         output reg [width-1:0] mmult_results,
@@ -70,7 +71,7 @@ module mmult
                 if (count_sums == n-1) begin
                     //RES_write_en <= 1;
                     //RES_write_address <= which_row;
-                    mmult_results <=  (sum + (X_read_data * Y_read_data)) >> 8;
+                    mmult_results <=  (sum + (X_read_data * Y_read_data) + mmult_bias_term) >> 8;
                     mmult_particular_datapoint_done <= 1;
                     //before_trim <=  sum + X_read_data * Y_read_data;
                     //RES_write_data_in <= (sum + (X_read_data * Y_read_data)) >> 8;    // Divide the FINAL SUM by 256
