@@ -54,7 +54,7 @@ void receive_from_realterm(u32 uart_base_addr, char* recv_a_matrix, char* recv_b
             // Comma, means we are transitioning to next matrix 'element'
             u8 concat_char = concat_char_buffer(buffer, num_insertions-1);
 
-            // Concat all data into one array for sending over using DMA (in ONE transaction)
+            // Concat all data into one array, which will be sent over to PL
             *HARD_input_memory = concat_char;
             HARD_input_memory++;
 

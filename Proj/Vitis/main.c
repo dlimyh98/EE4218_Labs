@@ -53,7 +53,7 @@ int main()
         // Communicate to Coprocessor IP via AXI-Stream
         for (; test_case_cnt < NUMBER_OF_TEST_VECTORS; test_case_cnt++) {
             /********************* TX *********************/
-            if (AXIS_transmit(FifoInstancePtr) != XST_SUCCESS) {
+            if (AXIS_transmit(FifoInstancePtr, HARD_input_memory) != XST_SUCCESS) {
                 xil_printf("TX error\n");
                 return XST_FAILURE;
             }
@@ -210,30 +210,13 @@ int init_interrupts(XScuGic* IntC, XLlFifo* FifoInstancePtr, XTmrCtr* TimerCtrIn
 }
 
 /*********************************** AXI-Stream TX,RX *********************************************/
-int AXIS_transmit(XLlFifo* FifoInstancePtr) {
+int AXIS_transmit(XLlFifo* FifoInstancePtr, int* HARD_input_memory) {
     // Writing into the FIFO Transmit Port Buffer (Input to PL Coprocessor)
     for (int word_cnt=0; word_cnt < NUMBER_OF_INPUT_WORDS; word_cnt++) {
 
         // We set AXIS FIFO depth to 1024 (words) in Vivado, so it can comfortably fit NUMBER_OF_INPUT_WORDS
         if( XLlFifo_iTxVacancy(FifoInstancePtr) ) {
-            int offset;
-
-            if (0 <= word_cnt 
-                && word_cnt < (A_NUM_ROWS*A_NUM_COLS)) {
-                    // Send over 'A' matrix
-                    XLlFifo_TxPutWord(FifoInstancePtr, (int)recv_a_matrix[word_cnt + test_case_cnt*NUMBER_OF_INPUT_WORDS]);
-            }
-            else if ((A_NUM_ROWS*A_NUM_COLS) <= word_cnt 
-                    && word_cnt < ((A_NUM_ROWS*A_NUM_COLS) + (B_NUM_ROWS*B_NUM_COLS))) {
-                        // Send over 'B' matrix
-                        offset = word_cnt - (A_NUM_ROWS*A_NUM_COLS);
-                        XLlFifo_TxPutWord(FifoInstancePtr, (int)recv_b_matrix[offset + test_case_cnt*NUMBER_OF_INPUT_WORDS]);
-            }
-            else {
-                // Send over 'C' matrix
-                offset = word_cnt - (A_NUM_ROWS*A_NUM_COLS) - (B_NUM_ROWS*B_NUM_COLS);
-                XLlFifo_TxPutWord(FifoInstancePtr, (int)recv_b_matrix[offset + test_case_cnt*NUMBER_OF_INPUT_WORDS]);
-            }
+            XLlFifo_TxPutWord(FifoInstancePtr, (int)HARD_input_memory[word_cnt + test_case_cnt*NUMBER_OF_INPUT_WORDS]);
         }
     }
 
@@ -404,6 +387,7 @@ int verify() {
 	// Compare received HDL/HLS data with our software computation
 	xil_printf(" Comparing data ...\r\n");
 	for (int word_cnt=0; word_cnt < NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS; word_cnt++) {
+        xil_printf("%d ", HARD_result_memory[word_cnt]);
 		success = success & (HARD_result_memory[word_cnt] == SOFT_output_layer_neurons[word_cnt]);
 	}
 

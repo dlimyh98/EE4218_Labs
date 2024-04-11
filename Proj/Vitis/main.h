@@ -2,7 +2,7 @@
 // Choose between 
 //  - AXI-DMA (Polling) connected HDL; (HARD_HDL)
 //  - AXI-Stream (Interrupt) connected HLS (HARD_HLS)
-//#define HARD_HLS
+#define HARD_HLS
 
 #define NUM_FRACTIONAL_BITS 8
 #define NUM_WEIGHTS_INPUT_TO_HIDDEN 8    // 7(weight connections) + 1(bias)
@@ -82,7 +82,7 @@ int verify();
 int init_interrupts(XScuGic* IntC, XLlFifo* FifoInstancePtr, XTmrCtr* TimerCtrInstancePtr);
 static void axi_stream_interrupt_handler (XLlFifo* FifoInstancePtr);
 static void timer_interrupt_handler();
-int AXIS_transmit(XLlFifo* FifoInstancePtr);
+int AXIS_transmit(XLlFifo* FifoInstancePtr, int* HARD_input_memory);
 int AXIS_receive(XLlFifo* FifoInstancePtr);
 
 void SOFT_processing(char* recv_a_matrix, char* recv_b_matrix, char* recv_c_matrix, u8 (*SOFT_hidden_layer_neurons)[A_NUM_ROWS], u8* SOFT_output_layer_neurons);
